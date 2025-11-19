@@ -14,13 +14,50 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Force white background in dark mode as well */
+    --background: #ffffff;
+    --foreground: #171717;
   }
 }
 
 body {
-  background: var(--background);
+  background: #ffffff; /* keep body white regardless of scheme */
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Demand Waterfall header styles */
+.month-header {
+  background-color: #d8b4fe; /* light purple */
+  color: #1f2937;
+  font-weight: 600;
+  text-align: center;
+}
+.so-header {
+  background-color: #bfdbfe; /* light blue */
+  color: #111827;
+  font-weight: 600;
+  text-align: center;
+}
+.forecast-header {
+  background-color: #fbcfe8; /* light pink */
+  color: #111827;
+  font-weight: 600;
+  text-align: center;
+}
+.ss-header {
+  background-color: #fde68a; /* light yellow */
+  color: #111827;
+  font-weight: 600;
+  text-align: center;
+}
+.left-header {
+  background-color: #e5e7eb; /* light gray */
+  color: #111827;
+  font-weight: 600;
+}
+
+/* Improve fixed left columns contrast */
+.demand-waterfall-table .ht_clone_left thead th {
+  background-color: #e5e7eb;
 }
