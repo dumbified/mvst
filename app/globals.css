@@ -61,3 +61,13 @@ body {
 .demand-waterfall-table .ht_clone_left thead th {
   background-color: #e5e7eb;
 }
+
+/* Bold headers for waterfall table */
+.hot-waterfall thead th {
+  font-weight: bold !important;
+}
+
+.hot-waterfall .ht_clone_top thead th,
+.hot-waterfall .ht_clone_left_top thead th {
+  font-weight: bold !important;
+}
