@@ -17,20 +17,20 @@ export default function UploadControls({ onSalesOrdersUpload }: UploadControlsPr
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 font-mono">
       <input id="upload-so" type="file" accept=".csv" className="hidden" onChange={handleSalesOrdersChange} />
       <label
         htmlFor="upload-so"
-        className="cursor-pointer inline-flex items-center rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50"
+        className="cursor-pointer inline-flex items-center rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50 font-mono"
       >
-        Upload Sales Orders CSV
+        Upload SO
       </label>
       <input id="upload-forecast" type="file" accept=".csv" className="hidden" />
       <label
         htmlFor="upload-forecast"
-        className="cursor-pointer inline-flex items-center rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50"
+        className="cursor-pointer inline-flex items-center rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50 font-mono"
       >
-        Upload Forecast CSV
+        Upload Forecast
       </label>
     </div>
   );

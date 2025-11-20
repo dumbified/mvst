@@ -6,6 +6,7 @@ import 'handsontable/styles/handsontable.min.css';
 import 'handsontable/styles/ht-theme-main.min.css';
 import { registerAllModules } from 'handsontable/registry';
 import { PLATFORM_LABELS, PlatformKey, SalesOrderSummary } from "../lib/salesOrders";
+import { textRenderer } from "handsontable/renderers/textRenderer";
 
 registerAllModules();
 
@@ -38,7 +39,7 @@ const SUMMARY_COLUMNS: { key: string; label: string; width: number }[] = [
   { key: "ttlDmdRm", label: "Ttl Dmd (RM)", width: 130 },
 ];
 
-const BOM_COST_BY_PLATFORM: Record<string, number> = {
+const DEFAULT_BOM_COSTS: Record<string, number> = {
   TH3K: 583382,
   TR3K: 834063,
   THSE: 306667,
@@ -52,6 +53,13 @@ type DemandWaterfallTableProps = {
 export default function DemandWaterfallTable({ salesOrders }: DemandWaterfallTableProps) {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(() => [...PLATFORM_OPTIONS]);
   const hotTableRef = useRef<any>(null);
+  const [bomCosts, setBomCosts] = useState<Record<string, number>>(DEFAULT_BOM_COSTS);
+  const [isEditingCosts, setIsEditingCosts] = useState(false);
+  const [editingCosts, setEditingCosts] = useState<Record<string, string>>(() => {
+    const obj: Record<string, string> = {};
+    PLATFORM_OPTIONS.forEach((p) => (obj[p] = String(DEFAULT_BOM_COSTS[p] ?? 0)));
+    return obj;
+  });
 
   const months = useMemo<MonthColumn[]>(() => salesOrders?.months ?? DEFAULT_MONTHS, [salesOrders]);
 
@@ -59,6 +67,39 @@ export default function DemandWaterfallTable({ salesOrders }: DemandWaterfallTab
     () => PLATFORM_OPTIONS.filter((platform) => selectedPlatforms.includes(platform)),
     [selectedPlatforms]
   );
+
+  // Load saved BOM costs from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("mvst_bom_costs");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object") {
+          setBomCosts((prev) => ({ ...prev, ...parsed }));
+          const asStrings: Record<string, string> = {};
+          PLATFORM_OPTIONS.forEach((p) => (asStrings[p] = String(parsed[p] ?? DEFAULT_BOM_COSTS[p] ?? 0)));
+          setEditingCosts(asStrings);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const saveBomCosts = () => {
+    const next: Record<string, number> = {};
+    PLATFORM_OPTIONS.forEach((p) => {
+      const v = Number(String(editingCosts[p] ?? "").replace(/,/g, ""));
+      next[p] = Number.isFinite(v) ? v : 0;
+    });
+    setBomCosts(next);
+    try {
+      localStorage.setItem("mvst_bom_costs", JSON.stringify(next));
+    } catch {
+      // ignore storage errors
+    }
+    setIsEditingCosts(false);
+  };
 
   const data = useMemo(() => {
     if (visiblePlatforms.length === 0) {
@@ -89,7 +130,7 @@ export default function DemandWaterfallTable({ salesOrders }: DemandWaterfallTab
         fcstSum += fcstVal;
       });
 
-      const cost = BOM_COST_BY_PLATFORM[platform] ?? 0;
+      const cost = bomCosts[platform] ?? 0;
       const ttl = soSum + fcstSum;
       const soRm = soSum * cost;
       const fcstRm = fcstSum * cost;
@@ -145,7 +186,7 @@ export default function DemandWaterfallTable({ salesOrders }: DemandWaterfallTab
 
     rows.push(totalsRow);
     return rows;
-  }, [salesOrders, visiblePlatforms, months]);
+  }, [salesOrders, visiblePlatforms, months, bomCosts]);
 
   const nestedHeaders = useMemo(() => {
     const topRow: any[] = [
@@ -241,6 +282,23 @@ export default function DemandWaterfallTable({ salesOrders }: DemandWaterfallTab
     return comments;
   }, [salesOrders, visiblePlatforms, months]);
 
+  // Numeric renderer with thousand separators
+  const numberRenderer = useMemo(() => {
+    return function (
+      instance: any,
+      td: HTMLTableCellElement,
+      row: number,
+      col: number,
+      prop: any,
+      value: any,
+      cellProperties: any
+    ) {
+      const n = value === "" || value === null || value === undefined ? "" : Number(value);
+      const text = typeof n === "number" && Number.isFinite(n) ? n.toLocaleString("en-US") : (value ?? "");
+      textRenderer(instance, td, row, col, prop, text as any, cellProperties);
+    };
+  }, []);
+
   useEffect(() => {
     if (hotTableRef.current?.hotInstance) {
       const hot = hotTableRef.current.hotInstance;
@@ -270,10 +328,55 @@ export default function DemandWaterfallTable({ salesOrders }: DemandWaterfallTab
             </label>
           ))}
         </div>
-        {selectedPlatforms.length === 0 && (
-          <span className="text-xs text-amber-600 ml-auto">No platforms selected</span>
-        )}
+        <button
+          className="ml-auto inline-flex items-center rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50"
+          onClick={() => {
+            setEditingCosts((prev) => {
+              const next: Record<string, string> = { ...prev };
+              PLATFORM_OPTIONS.forEach((p) => (next[p] = String(bomCosts[p] ?? 0)));
+              return next;
+            });
+            setIsEditingCosts((v) => !v);
+          }}
+        >
+          {isEditingCosts ? "Close BOM Cost Editor" : "Edit BOM Costs"}
+        </button>
       </div>
+
+      {isEditingCosts && (
+        <div className="p-3 rounded-lg border border-neutral-200 bg-white">
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
+            {PLATFORM_OPTIONS.map((p) => (
+              <label key={`cost-${p}`} className="flex items-center gap-2">
+                <span className="w-16 text-sm text-neutral-700">{p}</span>
+                <input
+                  type="number"
+                  step="1"
+                  className="w-full rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                  value={editingCosts[p] ?? ""}
+                  onChange={(e) =>
+                    setEditingCosts((prev) => ({ ...prev, [p]: e.target.value }))
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              className="inline-flex items-center rounded-md bg-blue-600 text-white px-3 py-1.5 text-sm hover:bg-blue-700"
+              onClick={saveBomCosts}
+            >
+              Save BOM Costs
+            </button>
+            <button
+              className="inline-flex items-center rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 bg-white hover:bg-neutral-50"
+              onClick={() => setIsEditingCosts(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white" style={{ height: 600, width: "100%" }}>
         <HotTable
@@ -292,6 +395,14 @@ export default function DemandWaterfallTable({ salesOrders }: DemandWaterfallTab
           mergeCells={mergeBodyCells}
           comments={true}
           cell={[...cellComments, ...summaryCellMeta, ...totalsCellMeta]}
+          cells={(_, col) => {
+            const props: any = {};
+            // Format all data columns except the first two (date, platform)
+            if (col >= 2) {
+              props.renderer = numberRenderer as any;
+            }
+            return props;
+          }}
         />
       </div>
     </div>
