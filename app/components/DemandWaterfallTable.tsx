@@ -28,6 +28,23 @@ const DEFAULT_MONTHS: MonthColumn[] = [
 
 const PLATFORM_OPTIONS: PlatformKey[] = [...PLATFORM_LABELS];
 
+const SUMMARY_COLUMNS: { key: string; label: string; width: number }[] = [
+  { key: "currTotalSo", label: "Current total SO", width: 110 },
+  { key: "currTotalFcst", label: "Current total f'cst", width: 120 },
+  { key: "ttlDmd", label: "Ttl Dmd", width: 100 },
+  { key: "bomCostRm", label: "BOM Cost (RM)", width: 120 },
+  { key: "currTotalSoRm", label: "Current total SO (RM)", width: 150 },
+  { key: "currTotalFcstRm", label: "Current total f'cst (RM)", width: 160 },
+  { key: "ttlDmdRm", label: "Ttl Dmd (RM)", width: 130 },
+];
+
+const BOM_COST_BY_PLATFORM: Record<string, number> = {
+  TH3K: 583382,
+  TR3K: 834063,
+  THSE: 306667,
+  "TRS+": 390193,
+};
+
 type DemandWaterfallTableProps = {
   salesOrders?: SalesOrderSummary | null;
 };
@@ -48,19 +65,86 @@ export default function DemandWaterfallTable({ salesOrders }: DemandWaterfallTab
       return [];
     }
 
-    return visiblePlatforms.map((platform) => {
+    const rows: (string | number)[][] = [];
+    const perRowTotals: { so: number; fcst: number; ttl: number; cost: number; soRm: number; fcstRm: number; ttlRm: number }[] = [];
+
+    visiblePlatforms.forEach((platform) => {
       const row: (string | number)[] = [];
       row.push(salesOrders?.uploadDateLabel ?? "");
       row.push(platform);
+
+      let soSum = 0;
+      let fcstSum = 0;
+
       months.forEach((month) => {
         const totals = salesOrders?.totals?.[platform] ?? {};
         const bucket = totals[month.key];
-        row.push(bucket?.quantity ?? "");
-        row.push("");
-        row.push("");
+        const soVal = Number(bucket?.quantity ?? 0);
+        const fcstVal = 0; // placeholder until forecast data exists
+        const ssVal = 0; // placeholder for safety stock
+        row.push(soVal || "");
+        row.push(fcstVal || "");
+        row.push(ssVal || "");
+        soSum += soVal;
+        fcstSum += fcstVal;
       });
-      return row;
+
+      const cost = BOM_COST_BY_PLATFORM[platform] ?? 0;
+      const ttl = soSum + fcstSum;
+      const soRm = soSum * cost;
+      const fcstRm = fcstSum * cost;
+      const ttlRm = ttl * cost;
+
+      row.push(soSum);
+      row.push(fcstSum);
+      row.push(ttl);
+      row.push(cost);
+      row.push(soRm);
+      row.push(fcstRm);
+      row.push(ttlRm);
+
+      rows.push(row);
+      perRowTotals.push({ so: soSum, fcst: fcstSum, ttl, cost, soRm, fcstRm, ttlRm });
     });
+
+    // Totals row across platforms
+    const totalsRow: (string | number)[] = [];
+    totalsRow.push(salesOrders?.uploadDateLabel ?? "");
+    totalsRow.push("Total");
+
+    for (let mi = 0; mi < months.length; mi++) {
+      const soColIndex = 2 + mi * 3;
+      const fcstColIndex = soColIndex + 1;
+      const ssColIndex = soColIndex + 2;
+      let soSum = 0;
+      let fcstSum = 0;
+      let ssSum = 0;
+      rows.forEach((r) => {
+        soSum += Number(r[soColIndex] || 0);
+        fcstSum += Number(r[fcstColIndex] || 0);
+        ssSum += Number(r[ssColIndex] || 0);
+      });
+      totalsRow.push(soSum || "");
+      totalsRow.push(fcstSum || "");
+      totalsRow.push(ssSum || "");
+    }
+
+    // Summary columns totals (sum across platforms).
+    // Note: Do NOT total BOM Cost (RM); leave it blank on totals row.
+    const summaryStart = 2 + months.length * 3;
+    for (let i = 0; i < SUMMARY_COLUMNS.length; i++) {
+      const colDef = SUMMARY_COLUMNS[i];
+      if (colDef.key === "bomCostRm") {
+        totalsRow.push("");
+        continue;
+      }
+      let sum = 0;
+      rows.forEach((r) => (sum += Number(r[summaryStart + i] || 0)));
+      totalsRow.push(sum || "");
+    }
+
+    rows.push(totalsRow);
+    return rows;
   }, [salesOrders, visiblePlatforms, months]);
 
   const nestedHeaders = useMemo(() => {
@@ -68,18 +152,21 @@ export default function DemandWaterfallTable({ salesOrders }: DemandWaterfallTab
       { label: "Fcast Load in Date", colspan: 1 },
       { label: "Platform", colspan: 1 },
       ...months.map((month) => ({ label: month.label, colspan: 3 })),
+      { label: "Summary", colspan: SUMMARY_COLUMNS.length, className: "summary-header" },
     ];
     const secondRow: any[] = [
       "",
       "",
       ...months.flatMap(() => ["SO", "Forecast", "SS"]),
+      ...SUMMARY_COLUMNS.map((c) => ({ label: c.label, className: "summary-subheader" })),
     ];
     return [topRow, secondRow];
   }, [months]);
 
   const colWidths = useMemo(() => {
-    const widths: number[] = [140, 120];
-    months.forEach(() => widths.push(72, 72, 72));
+    const widths: number[] = [150, 110];
+    months.forEach(() => widths.push(78, 78, 78));
+    SUMMARY_COLUMNS.forEach((c) => widths.push(c.width));
     return widths;
   }, [months]);
 
@@ -93,8 +180,43 @@ export default function DemandWaterfallTable({ salesOrders }: DemandWaterfallTab
     if (visiblePlatforms.length <= 1) {
       return [];
     }
-    return [{ row: 0, col: 0, rowspan: visiblePlatforms.length, colspan: 1 }];
+    // Merge the date column across all platform rows AND the totals row to avoid duplicate dates
+    return [{ row: 0, col: 0, rowspan: visiblePlatforms.length + 1, colspan: 1 }];
   }, [visiblePlatforms]);
+
+  const totalsCellMeta = useMemo(() => {
+    if (visiblePlatforms.length === 0) return [];
+    const lastRow = visiblePlatforms.length; // totals row index
+    const totalCols = 2 + months.length * 3 + SUMMARY_COLUMNS.length;
+    const cells: any[] = [];
+    for (let c = 0; c < totalCols; c++) {
+      cells.push({
+        row: lastRow,
+        col: c,
+        className: "totals-cell",
+      });
+    }
+    // Bold the "Total" label cell
+    cells.push({ row: lastRow, col: 1, className: "totals-cell totals-cell-label" });
+    return cells;
+  }, [visiblePlatforms, months]);
+
+  // Style all cells in the summary area
+  const summaryCellMeta = useMemo(() => {
+    const meta: any[] = [];
+    const summaryStart = 2 + months.length * 3;
+    const numRows = visiblePlatforms.length + (visiblePlatforms.length > 0 ? 1 : 0);
+    for (let r = 0; r < numRows; r++) {
+      for (let i = 0; i < SUMMARY_COLUMNS.length; i++) {
+        meta.push({
+          row: r,
+          col: summaryStart + i,
+          className: "summary-cell",
+        });
+      }
+    }
+    return meta;
+  }, [months, visiblePlatforms]);
 
   const cellComments = useMemo(() => {
     if (!salesOrders) return [];
@@ -169,7 +291,7 @@ export default function DemandWaterfallTable({ salesOrders }: DemandWaterfallTab
           licenseKey="non-commercial-and-evaluation"
           mergeCells={mergeBodyCells}
           comments={true}
-          cell={cellComments}
+          cell={[...cellComments, ...summaryCellMeta, ...totalsCellMeta]}
         />
       </div>
     </div>

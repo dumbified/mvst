@@ -62,6 +62,30 @@ body {
   background-color: #e5e7eb;
 }
 
+/* Totals row styling */
+.hot-waterfall td.totals-cell {
+  background-color: #fef3c7; /* amber-100 */
+  font-weight: 600;
+}
+.hot-waterfall td.totals-cell-label {
+  text-transform: uppercase;
+}
+
+/* Summary area styling */
+.hot-waterfall th.summary-header {
+  background-color: #bbf7d0; /* green-200 */
+  color: #065f46; /* green-800 */
+  font-weight: 700;
+}
+.hot-waterfall th.summary-subheader {
+  background-color: #dcfce7; /* green-100 */
+  color: #065f46;
+  font-weight: 600;
+}
+.hot-waterfall td.summary-cell {
+  background-color: #f0fdf4; /* green-50 */
+}
+
 /* Bold headers for waterfall table */
 .hot-waterfall thead th {
   font-weight: bold !important;
