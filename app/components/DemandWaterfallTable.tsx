@@ -5,54 +5,73 @@ import { HotTable } from "@handsontable/react-wrapper";
 import 'handsontable/styles/handsontable.min.css';
 import 'handsontable/styles/ht-theme-main.min.css';
 import { registerAllModules } from 'handsontable/registry';
+import { PLATFORM_LABELS, PlatformKey, SalesOrderSummary } from "../lib/salesOrders";
 
 registerAllModules();
 
+type MonthColumn = { key: string; label: string };
 
-export default function DemandWaterfallTable() {
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+const DEFAULT_MONTHS: MonthColumn[] = [
+  { key: "2025-03", label: "Mar 25" },
+  { key: "2025-04", label: "Apr 25" },
+  { key: "2025-05", label: "May 25" },
+  { key: "2025-06", label: "Jun 25" },
+  { key: "2025-07", label: "Jul 25" },
+  { key: "2025-08", label: "Aug 25" },
+  { key: "2025-09", label: "Sep 25" },
+  { key: "2025-10", label: "Oct 25" },
+  { key: "2025-11", label: "Nov 25" },
+  { key: "2025-12", label: "Dec 25" },
+  { key: "2026-01", label: "Jan 26" },
+  { key: "2026-02", label: "Feb 26" },
+];
+
+const PLATFORM_OPTIONS: PlatformKey[] = [...PLATFORM_LABELS];
+
+type DemandWaterfallTableProps = {
+  salesOrders?: SalesOrderSummary | null;
+};
+
+export default function DemandWaterfallTable({ salesOrders }: DemandWaterfallTableProps) {
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(() => [...PLATFORM_OPTIONS]);
   const hotTableRef = useRef<any>(null);
 
-  const months = [
-    "Mar 25", "Apr 25", "May 25", "Jun 25", "Jul 25", "Aug 25",
-    "Sep 25", "Oct 25", "Nov 25", "Dec 25", "Jan 26", "Feb 26",
-  ];
+  const months = useMemo<MonthColumn[]>(() => salesOrders?.months ?? DEFAULT_MONTHS, [salesOrders]);
 
-  const dates = ["24 Mar 2025", "31 Mar 2025", "7 Apr 2025", "14 Apr 2025"];
-  const platforms = ["TH3K", "TR3K", "TRS+", "THSE"];
-
-  useEffect(() => {
-    if (selectedPlatforms.length === 0) {
-      setSelectedPlatforms([...platforms]);
-    }
-  }, []);
+  const visiblePlatforms = useMemo(
+    () => PLATFORM_OPTIONS.filter((platform) => selectedPlatforms.includes(platform)),
+    [selectedPlatforms]
+  );
 
   const data = useMemo(() => {
-    const rows: (string | number)[][] = [];
-    dates.forEach((d, di) => {
-      platforms.filter(p => selectedPlatforms.includes(p)).forEach((p) => {
-        const row: (string | number)[] = [];
-        row.push(d); // Fcast Load in Date
-        row.push(p); // Platform
-        months.forEach((_, mi) => {
-          row.push(mi === 1 && di === 2 && p === "TR3K" ? 5 : "");
-          row.push(mi === 2 && di === 0 && p === "TRS+" ? 10 : "");
-          row.push(mi === 0 && di === 3 && p === "THSE" ? 1 : "");
-        });
-        rows.push(row);
+    if (visiblePlatforms.length === 0) {
+      return [];
+    }
+
+    return visiblePlatforms.map((platform) => {
+      const row: (string | number)[] = [];
+      row.push(salesOrders?.uploadDateLabel ?? "");
+      row.push(platform);
+      months.forEach((month) => {
+        const totals = salesOrders?.totals?.[platform] ?? {};
+        const bucket = totals[month.key];
+        row.push(bucket?.quantity ?? "");
+        row.push("");
+        row.push("");
       });
+      return row;
     });
-    return rows;
-  }, [months, dates, platforms, selectedPlatforms]);
+  }, [salesOrders, visiblePlatforms, months]);
 
   const nestedHeaders = useMemo(() => {
     const topRow: any[] = [
       { label: "Fcast Load in Date", colspan: 1 },
       { label: "Platform", colspan: 1 },
-      ...months.map(m => ({ label: m, colspan: 3 })),
+      ...months.map((month) => ({ label: month.label, colspan: 3 })),
     ];
     const secondRow: any[] = [
-      "","",
+      "",
+      "",
       ...months.flatMap(() => ["SO", "Forecast", "SS"]),
     ];
     return [topRow, secondRow];
@@ -60,36 +79,45 @@ export default function DemandWaterfallTable() {
 
   const colWidths = useMemo(() => {
     const widths: number[] = [140, 120];
-    months.forEach(() => widths.push(72, 72, 72)); // SO, Forecast, SS all same width
+    months.forEach(() => widths.push(72, 72, 72));
     return widths;
   }, [months]);
 
   const togglePlatform = (platform: string) => {
-    setSelectedPlatforms(prev =>
-      prev.includes(platform)
-        ? prev.filter(p => p !== platform)
-        : [...prev, platform]
+    setSelectedPlatforms((prev) =>
+      prev.includes(platform) ? prev.filter((p) => p !== platform) : [...prev, platform]
     );
   };
 
-  // Merge body cells for dates and platforms
   const mergeBodyCells = useMemo(() => {
-    const merges: any[] = [];
-    let startRow = 0;
-    dates.forEach(d => {
-      const platformCount = platforms.filter(p => selectedPlatforms.includes(p)).length;
-      if (platformCount > 1) {
-        merges.push({ row: startRow, col: 0, rowspan: platformCount, colspan: 1 }); // Fcast Load in Date
-      }
-      platforms.filter(p => selectedPlatforms.includes(p)).forEach((_, i) => {
-        if (platformCount > 1) {
-          merges.push({ row: startRow + i, col: 1, rowspan: 1, colspan: 1 }); // Platform (optional)
-        }
+    if (visiblePlatforms.length <= 1) {
+      return [];
+    }
+    return [{ row: 0, col: 0, rowspan: visiblePlatforms.length, colspan: 1 }];
+  }, [visiblePlatforms]);
+
+  const cellComments = useMemo(() => {
+    if (!salesOrders) return [];
+    const comments: { row: number; col: number; comment: { value: string } }[] = [];
+
+    visiblePlatforms.forEach((platform, rowIndex) => {
+      const totals = salesOrders.totals[platform] ?? {};
+      months.forEach((month, monthIndex) => {
+        const bucket = totals[month.key];
+        if (!bucket || bucket.jobNumbers.length === 0) return;
+        const colIndex = 2 + monthIndex * 3;
+        comments.push({
+          row: rowIndex,
+          col: colIndex,
+          comment: {
+            value: bucket.jobNumbers.join("\n"),
+          },
+        });
       });
-      startRow += platformCount;
     });
-    return merges;
-  }, [dates, platforms, selectedPlatforms]);
+
+    return comments;
+  }, [salesOrders, visiblePlatforms, months]);
 
   useEffect(() => {
     if (hotTableRef.current?.hotInstance) {
@@ -97,18 +125,18 @@ export default function DemandWaterfallTable() {
       for (let row = 0; row < 2; row++) {
         for (let col = 0; col < hot.countCols(); col++) {
           const cell = hot.getCell(row, col);
-          if (cell) cell.style.fontWeight = 'bold';
+          if (cell) cell.style.fontWeight = "bold";
         }
       }
     }
-  }, [data, selectedPlatforms]);
+  }, [data, months, selectedPlatforms]);
 
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-4 p-3 bg-neutral-50 rounded-lg border border-neutral-200">
         <span className="text-sm font-medium text-neutral-700">Filter by Platform:</span>
         <div className="flex items-center gap-3 flex-wrap">
-          {platforms.map(platform => (
+          {PLATFORM_OPTIONS.map((platform) => (
             <label key={platform} className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -140,6 +168,8 @@ export default function DemandWaterfallTable() {
           className="hot-waterfall ht-theme-main"
           licenseKey="non-commercial-and-evaluation"
           mergeCells={mergeBodyCells}
+          comments={true}
+          cell={cellComments}
         />
       </div>
     </div>
