@@ -13,7 +13,7 @@ export type SalesOrderSummary = {
 
 export const PLATFORM_LABELS: readonly PlatformKey[] = ["TH3K", "TR3K", "TRS+", "THSE"];
 
-const PLATFORM_BY_ORDER_PART: Record<string, PlatformKey> = {
+export const PART_NUMBER_TO_PLATFORM: Record<string, PlatformKey> = {
   "9300-ai001": "TH3K",
   "9301-ai001": "TH3K",
   "9300-ai002": "TR3K",
@@ -75,7 +75,7 @@ const parseDelimitedLine = (line: string, delimiter: string) => {
   return values.map((value) => value.replace(/\r$/, ""));
 };
 
-const monthKeyFromDate = (date: Date) =>
+export const monthKeyFromDate = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 
 const addMonthsToKey = (key: string, monthsToAdd: number) => {
@@ -106,13 +106,13 @@ const expandMonthRange = (startKey: string, endKey: string) => {
   return months;
 };
 
-const formatMonthLabel = (key: string) => {
+export const formatMonthLabel = (key: string) => {
   const [year, month] = key.split("-");
   const date = new Date(Number(year), Number(month) - 1, 1);
   return MONTH_LABEL_FORMATTER.format(date);
 };
 
-const formatFullDate = (date: Date) => FULL_DATE_FORMATTER.format(date);
+export const formatFullDate = (date: Date) => FULL_DATE_FORMATTER.format(date);
 
 const sanitizeQuantity = (value: string) => {
   const cleaned = value.replace(/,/g, "");
@@ -191,7 +191,7 @@ export const parseSalesOrdersCsv = (
     if (!line.trim()) continue;
     const cells = parseDelimitedLine(line, delimiter);
     const orderPartRaw = (cells[orderPartIndex] ?? "").trim().toLowerCase();
-    const platform = PLATFORM_BY_ORDER_PART[orderPartRaw];
+    const platform = PART_NUMBER_TO_PLATFORM[orderPartRaw];
     if (!platform) continue;
 
     const shipByDate = parseShipByDate(cells[shipByIndex] ?? "");

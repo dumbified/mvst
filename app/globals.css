@@ -63,11 +63,70 @@ body {
 }
 
 /* Bold headers for waterfall table */
-.hot-waterfall thead th {
+.hot-waterfall thead th,
+.hot-waterfall thead th * {
   font-weight: bold !important;
+  font-size: 11px !important;
 }
 
 .hot-waterfall .ht_clone_top thead th,
-.hot-waterfall .ht_clone_left_top thead th {
+.hot-waterfall .ht_clone_top thead th *,
+.hot-waterfall .ht_clone_left_top thead th,
+.hot-waterfall .ht_clone_left_top thead th * {
   font-weight: bold !important;
+  font-size: 11px !important;
+}
+
+/* Target all header cells more aggressively */
+.hot-waterfall table thead th,
+.hot-waterfall table thead th span,
+.hot-waterfall .handsontable thead th,
+.hot-waterfall .handsontable thead th span {
+  font-size: 11px !important;
+}
+
+/* Summary area styling */
+.hot-waterfall .summary-cell {
+  background-color: #fef3c7 !important; /* light yellow/amber */
+  font-size: 11px !important;
+}
+
+.hot-waterfall .summary-header {
+  background-color: #fbbf24 !important; /* amber */
+  font-weight: bold !important;
+  font-size: 11px !important;
+}
+
+.hot-waterfall .summary-subheader {
+  background-color: #fcd34d !important; /* lighter amber */
+  font-weight: bold !important;
+  font-size: 11px !important;
+}
+
+/* Totals row styling */
+.hot-waterfall .totals-cell {
+  background-color: #dde6fe !important; /* light blue */
+  font-weight: normal !important;
+  font-size: 11px !important;
+}
+
+/* Ensure date column (col 0) never gets blue background */
+.hot-waterfall tbody td:first-child,
+.hot-waterfall .ht_clone_left tbody td:first-child {
+  background-color: transparent !important;
+}
+
+.hot-waterfall .totals-cell-label {
+  font-weight: bold !important;
+}
+
+/* Remove bold from all data cells (not headers) */
+.hot-waterfall tbody td {
+  font-weight: normal !important;
+  font-size: 11px !important;
+}
+
+.hot-waterfall .ht_clone_left tbody td {
+  font-weight: normal !important;
+  font-size: 11px !important;
 }
