@@ -217,17 +217,9 @@ export const parseSalesOrdersCsv = (
     }
   }
 
-  const sortedMonthKeys = Array.from(monthSet).sort();
-  const rangeStart =
-    sortedMonthKeys.length > 0 && compareMonthKeys(sortedMonthKeys[0], uploadMonthKey) >= 0
-      ? sortedMonthKeys[0]
-      : uploadMonthKey;
-  const furthestDataMonth =
-    sortedMonthKeys.length > 0 ? sortedMonthKeys[sortedMonthKeys.length - 1] : uploadMonthKey;
-  const minSixMonthEnd = addMonthsToKey(uploadMonthKey, 6); // includes upload month + 5 = 6 months total
-  const rangeEnd =
-    compareMonthKeys(furthestDataMonth, minSixMonthEnd) >= 0 ? furthestDataMonth : minSixMonthEnd;
-
+  // Always show from the upload month through the next 6 months (inclusive)
+  const rangeStart = uploadMonthKey;
+  const rangeEnd = addMonthsToKey(uploadMonthKey, 6);
   const expandedMonthKeys = expandMonthRange(rangeStart, rangeEnd);
 
   const months = expandedMonthKeys.map((key) => ({

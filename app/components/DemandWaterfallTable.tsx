@@ -56,11 +56,15 @@ const DEFAULT_BOM_COSTS: Record<string, number> = {
 type DemandWaterfallTableProps = {
   salesOrdersList?: SalesOrderSummary[];
   forecastSummary?: ForecastSummary | null;
+  deleteMode?: boolean;
+  onDeleteByDate?: (dateLabel: string) => void;
 };
 
 export default function DemandWaterfallTable({
   salesOrdersList = [],
   forecastSummary,
+  deleteMode = false,
+  onDeleteByDate,
 }: DemandWaterfallTableProps) {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(() => [...PLATFORM_OPTIONS]);
   const [showTotals, setShowTotals] = useState<boolean>(true);
@@ -597,11 +601,36 @@ export default function DemandWaterfallTable({
               });
             }
             
+            // Mark date column clickable in delete mode
+            if (deleteMode && col === 0) {
+              classNames.push("date-deletable");
+            }
+            
             if (classNames.length > 0) {
               props.className = classNames.join(" ");
             }
             
             return props;
+          }}
+          afterOnCellMouseDown={(_, coords) => {
+            if (!deleteMode) return;
+            const { row, col } = coords;
+            if (row == null || col == null) return;
+            if (col !== 0) return;
+            try {
+              const table = hotTableRef.current?.hotInstance;
+              const label = table?.getDataAtCell(row, 0);
+              if (label && typeof label === "string") {
+                const ok = window.confirm(
+                  `Delete records for "${label}"?\nThis can't be undone.`
+                );
+                if (ok) {
+                  onDeleteByDate?.(label);
+                }
+              }
+            } catch {
+              // ignore
+            }
           }}
         />
       </div>

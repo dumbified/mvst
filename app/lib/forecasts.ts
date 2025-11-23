@@ -106,6 +106,34 @@ const initializeTotals = (): Record<PlatformKey, Record<string, number>> => {
   );
 };
 
+const addMonthsToKey = (key: string, monthsToAdd: number) => {
+  const [year, month] = key.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+  date.setMonth(date.getMonth() + monthsToAdd);
+  return monthKeyFromDate(date);
+};
+
+const compareMonthKeys = (a: string, b: string) => {
+  if (a === b) return 0;
+  const [ay, am] = a.split("-").map(Number);
+  const [by, bm] = b.split("-").map(Number);
+  if (ay !== by) return ay < by ? -1 : 1;
+  return am < bm ? -1 : 1;
+};
+
+const expandMonthRange = (startKey: string, endKey: string) => {
+  const [startYear, startMonth] = startKey.split("-").map(Number);
+  const [endYear, endMonth] = endKey.split("-").map(Number);
+  const months: string[] = [];
+  const current = new Date(startYear, startMonth - 1, 1);
+  const end = new Date(endYear, endMonth - 1, 1);
+  while (current <= end) {
+    months.push(monthKeyFromDate(current));
+    current.setMonth(current.getMonth() + 1);
+  }
+  return months;
+};
+
 export const parseForecastCsv = (
   csvText: string,
   uploadDate: Date,
@@ -138,6 +166,8 @@ export const parseForecastCsv = (
 
   const totals = initializeTotals();
   const monthSet = new Set<string>();
+  const uploadMonthKey = monthKeyFromDate(new Date(uploadDate.getFullYear(), uploadDate.getMonth(), 1));
+  const endKey = addMonthsToKey(uploadMonthKey, 6);
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
@@ -155,16 +185,15 @@ export const parseForecastCsv = (
     if (!quantity) continue;
 
     const monthKey = monthKeyFromDate(forecastDate);
-    monthSet.add(monthKey);
-    totals[platform][monthKey] = (totals[platform][monthKey] ?? 0) + quantity;
+    if (compareMonthKeys(monthKey, uploadMonthKey) >= 0 && compareMonthKeys(monthKey, endKey) <= 0) {
+      monthSet.add(monthKey);
+      totals[platform][monthKey] = (totals[platform][monthKey] ?? 0) + quantity;
+    }
   }
 
-  if (monthSet.size === 0) {
-    return null;
-  }
-
-  const sortedKeys = Array.from(monthSet).sort();
-  const months = sortedKeys.map((key) => ({
+  // Always show from the upload month through the next 6 months (inclusive)
+  const rangeKeys = expandMonthRange(uploadMonthKey, endKey);
+  const months = rangeKeys.map((key) => ({
     key,
     label: formatMonthLabel(key),
   }));
