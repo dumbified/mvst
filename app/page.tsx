@@ -3,14 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import DemandWaterfallTable from "./components/DemandWaterfallTable";
 import UploadControls from "./components/UploadControls";
-import { SalesOrderSummary, parseSalesOrdersCsv } from "./lib/salesOrders";
+import { SalesOrderSummary, parseSalesOrdersCsv, formatFullDate, formatMonthLabel, monthKeyFromDate } from "./lib/salesOrders";
 import { ForecastSummary, parseForecastCsv } from "./lib/forecasts";
 import { uploadFileToSupabase } from "./lib/storage";
 
 export default function Home() {
   const [salesOrdersList, setSalesOrdersList] = useState<SalesOrderSummary[]>([]);
   const [forecastSummary, setForecastSummary] = useState<ForecastSummary | null>(null);
-  const [deleteMode, setDeleteMode] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const bucketName = "uploads";
 
   // Load saved data on mount
@@ -84,6 +84,50 @@ export default function Home() {
     setForecastSummary((prev) => (prev?.uploadDateLabel === dateLabel ? null : prev));
   }, []);
 
+  const buildMonthsForUploadDate = (date: Date) => {
+    const startKey = monthKeyFromDate(new Date(date.getFullYear(), date.getMonth(), 1));
+    const months: { key: string; label: string }[] = [];
+    for (let i = 0; i <= 6; i++) {
+      const d = new Date(date.getFullYear(), date.getMonth(), 1);
+      d.setMonth(d.getMonth() + i);
+      const key = monthKeyFromDate(d);
+      months.push({ key, label: formatMonthLabel(key) });
+    }
+    return months;
+  };
+
+  const handleDateEdit = useCallback((dateLabel: string) => {
+    // If clicking the current forecast period, offer edit or delete
+    if (forecastSummary && forecastSummary.uploadDateLabel === dateLabel) {
+      const input = window.prompt(
+        'Enter new forecast load-in date (e.g., "2025-11-17" or "17 Nov 2025"):',
+        ""
+      );
+      if (!input) return;
+      const next = new Date(input);
+      if (Number.isNaN(next.getTime())) {
+        window.alert("Invalid date. Please try again.");
+        return;
+      }
+      const months = buildMonthsForUploadDate(next);
+      setForecastSummary((prev) =>
+        prev
+          ? {
+              ...prev,
+              uploadDateLabel: formatFullDate(next),
+              months,
+            }
+          : prev
+      );
+      return;
+    }
+    // Editing non-forecast period is not supported
+  }, [forecastSummary, handleDeleteByDate]);
+
+  const handleDateDelete = useCallback((dateLabel: string) => {
+    handleDeleteByDate(dateLabel);
+  }, [forecastSummary, handleDeleteByDate]);
+
   return (
     <main className="min-h-screen p-6 md:p-10 flex flex-col gap-6 bg-white">
       <header className="space-y-2">
@@ -95,16 +139,17 @@ export default function Home() {
           <UploadControls
             onSalesOrdersUpload={handleSalesOrdersUpload}
             onForecastUpload={handleForecastUpload}
-            deleteMode={deleteMode}
-            onToggleDeleteMode={() => setDeleteMode((v) => !v)}
+            editMode={editMode}
+            onToggleEditMode={() => setEditMode((v) => !v)}
           />
         </div>
         <div className="overflow-auto rounded-lg border border-neutral-200/60 bg-white">
           <DemandWaterfallTable
             salesOrdersList={salesOrdersList}
             forecastSummary={forecastSummary}
-            deleteMode={deleteMode}
-            onDeleteByDate={handleDeleteByDate}
+            editMode={editMode}
+            onDateEdit={handleDateEdit}
+            onDateDelete={handleDateDelete}
           />
         </div>
       </section>

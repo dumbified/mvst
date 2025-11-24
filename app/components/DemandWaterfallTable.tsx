@@ -56,15 +56,17 @@ const DEFAULT_BOM_COSTS: Record<string, number> = {
 type DemandWaterfallTableProps = {
   salesOrdersList?: SalesOrderSummary[];
   forecastSummary?: ForecastSummary | null;
-  deleteMode?: boolean;
-  onDeleteByDate?: (dateLabel: string) => void;
+  editMode?: boolean;
+  onDateEdit?: (dateLabel: string) => void;
+  onDateDelete?: (dateLabel: string) => void;
 };
 
 export default function DemandWaterfallTable({
   salesOrdersList = [],
   forecastSummary,
-  deleteMode = false,
-  onDeleteByDate,
+  editMode = false,
+  onDateEdit,
+  onDateDelete,
 }: DemandWaterfallTableProps) {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(() => [...PLATFORM_OPTIONS]);
   const [showTotals, setShowTotals] = useState<boolean>(true);
@@ -601,8 +603,8 @@ export default function DemandWaterfallTable({
               });
             }
             
-            // Mark date column clickable in delete mode
-            if (deleteMode && col === 0) {
+            // Mark date column clickable in edit mode
+            if (editMode && col === 0) {
               classNames.push("date-deletable");
             }
             
@@ -612,8 +614,8 @@ export default function DemandWaterfallTable({
             
             return props;
           }}
-          afterOnCellMouseDown={(_, coords) => {
-            if (!deleteMode) return;
+          afterOnCellMouseDown={(event: any, coords) => {
+            if (!editMode) return;
             const { row, col } = coords;
             if (row == null || col == null) return;
             if (col !== 0) return;
@@ -621,11 +623,14 @@ export default function DemandWaterfallTable({
               const table = hotTableRef.current?.hotInstance;
               const label = table?.getDataAtCell(row, 0);
               if (label && typeof label === "string") {
-                const ok = window.confirm(
-                  `Delete records for "${label}"?\nThis can't be undone.`
-                );
-                if (ok) {
-                  onDeleteByDate?.(label);
+                if (event?.button === 2) {
+                  // Right-click: delete
+                  event.preventDefault?.();
+                  const ok = window.confirm(`Delete records for "${label}"?\nThis can't be undone.`);
+                  if (ok) onDateDelete?.(label);
+                } else if (event?.button === 0) {
+                  // Left-click: edit
+                  onDateEdit?.(label);
                 }
               }
             } catch {
