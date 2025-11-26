@@ -1,6 +1,6 @@
 'use client';
 
-import { ChangeEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type UploadControlsProps = {
   onSalesOrdersUpload?: (file: File) => void;
@@ -20,6 +20,7 @@ export default function UploadControls({
   const [fcFile, setFcFile] = useState<File | null>(null);
   const soInputRef = useRef<HTMLInputElement>(null);
   const fcInputRef = useRef<HTMLInputElement>(null);
+  const controlsRef = useRef<HTMLDivElement>(null);
 
   const canSave = useMemo(() => !!soFile || !!fcFile, [soFile, fcFile]);
 
@@ -33,14 +34,14 @@ export default function UploadControls({
     setFcFile(file);
   };
 
-  const handleOpen = () => setOpen(true);
+  const handleOpen = () => setOpen((prev) => !prev);
 
-  const resetSelections = () => {
+  const resetSelections = useCallback(() => {
     setSoFile(null);
     setFcFile(null);
     if (soInputRef.current) soInputRef.current.value = "";
     if (fcInputRef.current) fcInputRef.current.value = "";
-  };
+  }, []);
 
   const handleCancel = () => {
     resetSelections();
@@ -61,8 +62,21 @@ export default function UploadControls({
     }
   };
 
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!controlsRef.current) return;
+      if (!controlsRef.current.contains(event.target as Node)) {
+        resetSelections();
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open, resetSelections]);
+
   return (
-    <div className="font-mono flex items-center gap-2">
+    <div className="font-mono flex items-center gap-2 relative" ref={controlsRef}>
       <div>
         <button
           type="button"
@@ -87,11 +101,9 @@ export default function UploadControls({
       </div>
 
       {open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={handleCancel} />
-          <div className="relative z-10 w-full max-w-md rounded-lg border border-neutral-200 bg-white p-3 shadow-lg">
-            <div className="text-sm font-medium text-neutral-800 mb-2">Upload files</div>
-            <div className="space-y-2">
+        <div className="absolute right-0 top-full mt-2 z-[6000] w-full max-w-md rounded-lg border border-neutral-200 bg-white p-3 shadow-lg">
+          <div className="text-sm font-medium text-neutral-800 mb-2">Upload files</div>
+          <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm text-neutral-700">Sales Orders (CSV)</div>
               <div className="flex items-center gap-2">
@@ -112,9 +124,7 @@ export default function UploadControls({
               </div>
             </div>
             {soFile ? (
-              <div className="text-xs text-neutral-500 truncate">
-                Selected: {soFile.name}
-              </div>
+              <div className="text-xs text-neutral-500 truncate">Selected: {soFile.name}</div>
             ) : null}
 
             <div className="flex items-center justify-between gap-3 pt-2">
@@ -137,9 +147,7 @@ export default function UploadControls({
               </div>
             </div>
             {fcFile ? (
-              <div className="text-xs text-neutral-500 truncate">
-                Selected: {fcFile.name}
-              </div>
+              <div className="text-xs text-neutral-500 truncate">Selected: {fcFile.name}</div>
             ) : null}
             <div className="mt-3 flex items-center justify-end gap-2">
               <button
@@ -152,14 +160,15 @@ export default function UploadControls({
               <button
                 type="button"
                 disabled={!canSave}
-                className={`inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium ${canSave ? "bg-black text-white hover:bg-neutral-800" : "bg-neutral-200 text-neutral-500 cursor-not-allowed"}`}
+                className={`inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium ${
+                  canSave ? "bg-black text-white hover:bg-neutral-800" : "bg-neutral-200 text-neutral-500 cursor-not-allowed"
+                }`}
                 onClick={handleSave}
               >
                 Save
               </button>
             </div>
           </div>
-        </div>
         </div>
       ) : null}
     </div>

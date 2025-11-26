@@ -3,14 +3,34 @@
 import { useCallback, useEffect, useState } from "react";
 import DemandWaterfallTable from "./components/DemandWaterfallTable";
 import UploadControls from "./components/UploadControls";
+import DatePickerDialog from "./components/DatePickerDialog";
 import { SalesOrderSummary, parseSalesOrdersCsv, formatFullDate, formatMonthLabel, monthKeyFromDate } from "./lib/salesOrders";
 import { ForecastSummary, parseForecastCsv } from "./lib/forecasts";
 import { uploadFileToSupabase } from "./lib/storage";
+
+const MONTH_LOOKUP: Record<string, number> = {
+  Jan: 0,
+  Feb: 1,
+  Mar: 2,
+  Apr: 3,
+  May: 4,
+  Jun: 5,
+  Jul: 6,
+  Aug: 7,
+  Sep: 8,
+  Oct: 9,
+  Nov: 10,
+  Dec: 11,
+};
 
 export default function Home() {
   const [salesOrdersList, setSalesOrdersList] = useState<SalesOrderSummary[]>([]);
   const [forecastSummary, setForecastSummary] = useState<ForecastSummary | null>(null);
   const [editMode, setEditMode] = useState(false);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [editingDateLabel, setEditingDateLabel] = useState<string | null>(null);
+  const [editingDate, setEditingDate] = useState<Date | undefined>(undefined);
+  const [editingAnchor, setEditingAnchor] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const bucketName = "uploads";
 
   // Load saved data on mount
@@ -84,7 +104,7 @@ export default function Home() {
     setForecastSummary((prev) => (prev?.uploadDateLabel === dateLabel ? null : prev));
   }, []);
 
-  const buildMonthsForUploadDate = (date: Date) => {
+  const buildMonthsForUploadDate = useCallback((date: Date) => {
     const startKey = monthKeyFromDate(new Date(date.getFullYear(), date.getMonth(), 1));
     const months: { key: string; label: string }[] = [];
     for (let i = 0; i <= 6; i++) {
@@ -94,39 +114,93 @@ export default function Home() {
       months.push({ key, label: formatMonthLabel(key) });
     }
     return months;
-  };
+  }, []);
 
-  const handleDateEdit = useCallback((dateLabel: string) => {
-    // If clicking the current forecast period, offer edit or delete
-    if (forecastSummary && forecastSummary.uploadDateLabel === dateLabel) {
-      const input = window.prompt(
-        'Enter new forecast load-in date (e.g., "2025-11-17" or "17 Nov 2025"):',
-        ""
-      );
-      if (!input) return;
-      const next = new Date(input);
-      if (Number.isNaN(next.getTime())) {
-        window.alert("Invalid date. Please try again.");
+  // Parse date from dateLabel string (format: "DD MMM YYYY")
+  const parseDateFromLabel = useCallback(
+    (dateLabel: string): Date | null => {
+      const match = dateLabel.trim().match(/^(\d{2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+      if (!match) return null;
+      const [, dayStr, monthStrRaw, yearStr] = match;
+      const monthStr = monthStrRaw.slice(0, 3);
+      const monthIndex = MONTH_LOOKUP[monthStr as keyof typeof MONTH_LOOKUP];
+      if (monthIndex == null) return null;
+      const day = Number(dayStr);
+      const year = Number(yearStr);
+      const parsed = new Date(year, monthIndex, day);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    },
+    []
+  );
+
+  const handleDateEdit = useCallback(
+    (dateLabel: string, anchor?: { top: number; left: number; width: number; height: number }) => {
+      if (datePickerOpen && editingDateLabel === dateLabel) {
+        setDatePickerOpen(false);
+        setEditingDateLabel(null);
+        setEditingDate(undefined);
+        setEditingAnchor(null);
         return;
       }
-      const months = buildMonthsForUploadDate(next);
+
+      // Find the current date from the label
+      const currentDate = parseDateFromLabel(dateLabel);
+      if (!currentDate) {
+        console.error("Could not parse date from label:", dateLabel);
+        return;
+      }
+
+      // Set up the date picker dialog
+      setEditingDateLabel(dateLabel);
+      setEditingDate(currentDate);
+      setEditingAnchor(anchor ?? null);
+      setDatePickerOpen(true);
+    },
+    [datePickerOpen, editingDateLabel, parseDateFromLabel]
+  );
+
+  const handleDateDelete = useCallback((dateLabel: string) => {
+    handleDeleteByDate(dateLabel);
+  }, [handleDeleteByDate]);
+
+  const handleDateSelect = useCallback((newDate: Date) => {
+    if (!editingDateLabel) return;
+
+    const months = buildMonthsForUploadDate(newDate);
+    const newDateLabel = formatFullDate(newDate);
+
+    // Update forecast if it matches
+    if (forecastSummary && forecastSummary.uploadDateLabel === editingDateLabel) {
       setForecastSummary((prev) =>
         prev
           ? {
               ...prev,
-              uploadDateLabel: formatFullDate(next),
+              uploadDateLabel: newDateLabel,
               months,
             }
           : prev
       );
-      return;
     }
-    // Editing non-forecast period is not supported
-  }, [forecastSummary, handleDeleteByDate]);
 
-  const handleDateDelete = useCallback((dateLabel: string) => {
-    handleDeleteByDate(dateLabel);
-  }, [forecastSummary, handleDeleteByDate]);
+    // Update sales orders if any match
+    setSalesOrdersList((prev) =>
+      prev.map((so) =>
+        so.uploadDateLabel === editingDateLabel
+          ? {
+              ...so,
+              uploadDateLabel: newDateLabel,
+              months,
+            }
+          : so
+      )
+    );
+
+    // Close the dialog
+    setDatePickerOpen(false);
+    setEditingDateLabel(null);
+    setEditingDate(undefined);
+    setEditingAnchor(null);
+  }, [editingDateLabel, forecastSummary, buildMonthsForUploadDate]);
 
   return (
     <main className="min-h-screen p-6 md:p-10 flex flex-col gap-6 bg-white">
@@ -153,6 +227,21 @@ export default function Home() {
           />
         </div>
       </section>
+      <DatePickerDialog
+        open={datePickerOpen}
+        onOpenChange={(open) => {
+          setDatePickerOpen(open);
+          if (!open) {
+            // Reset editing state when dialog closes
+            setEditingDateLabel(null);
+            setEditingDate(undefined);
+            setEditingAnchor(null);
+          }
+        }}
+        date={editingDate}
+        onDateSelect={handleDateSelect}
+        anchor={editingAnchor ?? undefined}
+      />
     </main>
   );
 }

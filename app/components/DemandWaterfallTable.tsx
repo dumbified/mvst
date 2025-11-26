@@ -53,11 +53,13 @@ const DEFAULT_BOM_COSTS: Record<string, number> = {
   "TRS+": 390193,
 };
 
+type DateAnchor = { top: number; left: number; width: number; height: number };
+
 type DemandWaterfallTableProps = {
   salesOrdersList?: SalesOrderSummary[];
   forecastSummary?: ForecastSummary | null;
   editMode?: boolean;
-  onDateEdit?: (dateLabel: string) => void;
+  onDateEdit?: (dateLabel: string, anchor?: DateAnchor) => void;
   onDateDelete?: (dateLabel: string) => void;
 };
 
@@ -218,11 +220,20 @@ export default function DemandWaterfallTable({
 
         const orderTotals = salesOrders.totals[platform] ?? {};
         const platformForecast = forecastTotals[platform] ?? {};
+        
+        // Get the valid months for this period (months >= upload month)
+        const periodMonthKeys = new Set(salesOrders.months.map(m => m.key));
+        const forecastMonthKeys = forecastSummary ? new Set(forecastSummary.months.map(m => m.key)) : new Set<string>();
 
         months.forEach((month) => {
-          const bucket = orderTotals[month.key];
-          const soVal = Number(bucket?.quantity ?? 0);
-          const fcstVal = Number(platformForecast[month.key] ?? 0);
+          // Only show data if this month is >= the period's upload month
+          const isPeriodMonth = periodMonthKeys.has(month.key);
+          // Forecast should only show if month >= forecast upload month AND month >= period upload month
+          const isForecastMonth = forecastMonthKeys.has(month.key) && isPeriodMonth;
+          
+          const bucket = isPeriodMonth ? orderTotals[month.key] : undefined;
+          const soVal = isPeriodMonth ? Number(bucket?.quantity ?? 0) : 0;
+          const fcstVal = isForecastMonth ? Number(platformForecast[month.key] ?? 0) : 0;
           const ssVal = 0; // placeholder for safety stock
           row.push(soVal || "");
           row.push(fcstVal || "");
@@ -388,17 +399,63 @@ export default function DemandWaterfallTable({
     return meta;
   }, [months, visiblePlatforms, salesOrdersList, forecastSummary, showTotals]);
 
+  // Helper to get row metadata (period, platform index, isTotals, valid months)
+  const getRowMetadata = useMemo(() => {
+    const effectivePeriods =
+      salesOrdersList.length > 0
+        ? salesOrdersList
+        : forecastSummary
+        ? [
+            {
+              uploadDateLabel: forecastSummary.uploadDateLabel,
+              months: forecastSummary.months,
+              totals: PLATFORM_LABELS.reduce(
+                (acc, platform) => ({
+                  ...acc,
+                  [platform]: {},
+                }),
+                {} as Record<PlatformKey, Record<string, SalesOrderBucket>>,
+              ),
+            },
+          ]
+        : [];
+    
+    const rowsPerPeriod = showTotals ? visiblePlatforms.length + 1 : visiblePlatforms.length;
+    
+    return (row: number) => {
+      const periodIndex = Math.floor(row / rowsPerPeriod);
+      const rowInPeriod = row % rowsPerPeriod;
+      const isTotals = showTotals && rowInPeriod === visiblePlatforms.length;
+      const platformIndex = isTotals ? -1 : rowInPeriod;
+      
+      if (periodIndex >= effectivePeriods.length) {
+        return { periodIndex: -1, platformIndex: -1, isTotals: false, validMonthKeys: new Set<string>() };
+      }
+      
+      const period = effectivePeriods[periodIndex];
+      const validMonthKeys = new Set(period.months.map(m => m.key));
+      
+      return { periodIndex, platformIndex, isTotals, validMonthKeys };
+    };
+  }, [salesOrdersList, visiblePlatforms, showTotals, forecastSummary]);
+
   const cellComments = useMemo(() => {
     if (salesOrdersList.length === 0) return [];
     const comments: { row: number; col: number; comment: { value: string } }[] = [];
 
     salesOrdersList.forEach((salesOrders, periodIndex) => {
+      // Get the valid months for this period (months >= upload month)
+      const periodMonthKeys = new Set(salesOrders.months.map(m => m.key));
+      
       visiblePlatforms.forEach((platform, platformIndex) => {
         // Calculate row index accounting for totals rows (if shown)
         const rowsPerPeriod = showTotals ? visiblePlatforms.length + 1 : visiblePlatforms.length;
         const rowIndex = periodIndex * rowsPerPeriod + platformIndex;
         const totals = salesOrders.totals[platform] ?? {};
         months.forEach((month, monthIndex) => {
+          // Only add comments for months that are valid for this period
+          if (!periodMonthKeys.has(month.key)) return;
+          
           const bucket = totals[month.key];
           if (!bucket || bucket.jobNumbers.length === 0) return;
           const colIndex = 2 + monthIndex * 3;
@@ -453,21 +510,59 @@ export default function DemandWaterfallTable({
             });
           }
         });
+        
+        // Apply border classes to header cells (all except summary headers)
+        const allHeaderCells = container.querySelectorAll('thead th, .ht_clone_top thead th, .ht_clone_left_top thead th');
+        allHeaderCells.forEach((cell: any) => {
+          // Apply borders to all header cells except summary headers
+          if (!cell.classList.contains('summary-header') && !cell.classList.contains('summary-subheader')) {
+            cell.classList.add("dark-border-header");
+          } else {
+            cell.classList.remove("dark-border-header");
+          }
+        });
+        
       }
       
-      // Ensure all data cells are not bold and have correct font size
+      // Ensure all data cells are not bold and have correct font size, and apply conditional borders
       const totalRows = hot.countRows();
+      const summaryStart = 2 + months.length * 3;
+      
       for (let row = 0; row < totalRows; row++) {
+        const metadata = getRowMetadata(row);
+        const { validMonthKeys } = metadata;
+        
         for (let col = 0; col < hot.countCols(); col++) {
           const cell = hot.getCell(row, col);
           if (cell) {
             cell.style.fontWeight = "normal";
             cell.style.fontSize = "11px";
+            
+            // Determine if this column should have dark borders
+            const isMonthColumn = col >= 2 && col < summaryStart;
+            let isInValidMonth = false;
+            if (isMonthColumn) {
+              const monthIndex = Math.floor((col - 2) / 3);
+              if (monthIndex >= 0 && monthIndex < months.length) {
+                const monthKey = months[monthIndex].key;
+                isInValidMonth = validMonthKeys.has(monthKey);
+              }
+            }
+            
+            // Apply dark border only for: date column (0), platform column (1), and valid month columns
+            const shouldHaveDarkBorder = col === 0 || col === 1 || (isMonthColumn && isInValidMonth);
+            
+            // Add or remove dark-border-cell class
+            if (shouldHaveDarkBorder) {
+              cell.classList.add("dark-border-cell");
+            } else {
+              cell.classList.remove("dark-border-cell");
+            }
           }
         }
       }
     }
-  }, [data, months, selectedPlatforms]);
+  }, [data, months, selectedPlatforms, getRowMetadata]);
 
   return (
     <div className="space-y-3">
@@ -556,6 +651,74 @@ export default function DemandWaterfallTable({
         </div>
       </div>
 
+      <style>{`
+        /* Ensure table uses border-collapse to prevent double borders */
+        .hot-waterfall table,
+        .hot-waterfall .ht_clone_top table,
+        .hot-waterfall .ht_clone_left table,
+        .hot-waterfall .ht_clone_left_top table {
+          border-collapse: collapse !important;
+          border-spacing: 0 !important;
+        }
+        
+        /* Dark borders for valid months, date, and platform columns */
+        /* Apply all borders - border-collapse will merge adjacent borders */
+        .hot-waterfall .dark-border-cell,
+        .hot-waterfall .dark-border-cell td,
+        .hot-waterfall .dark-border-cell th {
+          border: 0.1px solid #000000 !important;
+        }
+        .hot-waterfall .ht_clone_top .dark-border-cell,
+        .hot-waterfall .ht_clone_top .dark-border-cell td,
+        .hot-waterfall .ht_clone_top .dark-border-cell th,
+        .hot-waterfall .ht_clone_left .dark-border-cell,
+        .hot-waterfall .ht_clone_left .dark-border-cell td,
+        .hot-waterfall .ht_clone_left .dark-border-cell th,
+        .hot-waterfall .ht_clone_left_top .dark-border-cell,
+        .hot-waterfall .ht_clone_left_top .dark-border-cell td,
+        .hot-waterfall .ht_clone_left_top .dark-border-cell th {
+          border: 0.1px solid #000000 !important;
+        }
+        
+        /* Apply borders to header cells for date, platform, and all month columns */
+        .hot-waterfall thead th.dark-border-header,
+        .hot-waterfall .ht_clone_top thead th.dark-border-header,
+        .hot-waterfall .ht_clone_left_top thead th.dark-border-header {
+          border: 0.1px solid #000000 !important;
+        }
+        
+        /* Ensure outer edges have borders - leftmost columns get left border */
+        .hot-waterfall tbody td:first-child,
+        .hot-waterfall tbody td:nth-child(2),
+        .hot-waterfall .ht_clone_left tbody td:first-child,
+        .hot-waterfall .ht_clone_left tbody td:nth-child(2) {
+          border-left: 0.1px solid #000000 !important;
+        }
+        
+        /* Ensure outer edges have borders - topmost row gets top border */
+        .hot-waterfall thead th {
+          border-top: 0.1px solid #000000 !important;
+        }
+        .hot-waterfall .ht_clone_top thead th,
+        .hot-waterfall .ht_clone_left_top thead th {
+          border-top: 0.1px solid #000000 !important;
+        }
+        
+        /* Ensure leftmost header columns have left border */
+        .hot-waterfall thead th:first-child,
+        .hot-waterfall thead th:nth-child(2),
+        .hot-waterfall .ht_clone_top thead th:first-child,
+        .hot-waterfall .ht_clone_top thead th:nth-child(2),
+        .hot-waterfall .ht_clone_left_top thead th:first-child,
+        .hot-waterfall .ht_clone_left_top thead th:nth-child(2) {
+          border-left: 0.1px solid #000000 !important;
+        }
+        
+        /* Comment indicator color */
+        .hot-waterfall {
+          --ht-comments-indicator-color:rgb(255, 0, 0) !important; /* blue color */
+        }
+      `}</style>
       <div className="bg-white" style={{ height: 600, width: "100%" }}>
         <HotTable
           ref={hotTableRef}
@@ -577,30 +740,102 @@ export default function DemandWaterfallTable({
             const props: any = {};
             const classNames: string[] = [];
             
-            // Format all data columns except the first two (date, platform)
+            // Get row metadata
+            const metadata = getRowMetadata(row);
+            const { periodIndex, platformIndex, isTotals, validMonthKeys } = metadata;
+            
+            // Determine if this column is a month data column (SO, Forecast, or SS)
+            const summaryStart = 2 + months.length * 3;
+            const isMonthColumn = col >= 2 && col < summaryStart;
+            const isSummaryColumn = col >= summaryStart && col < summaryStart + SUMMARY_COLUMNS.length;
+            
+            // Calculate which month this column belongs to (if it's a month column)
+            let monthIndex = -1;
+            let isInValidMonth = false;
+            if (isMonthColumn) {
+              monthIndex = Math.floor((col - 2) / 3);
+              if (monthIndex >= 0 && monthIndex < months.length) {
+                const monthKey = months[monthIndex].key;
+                isInValidMonth = validMonthKeys.has(monthKey);
+              }
+            }
+            
+            // Determine background color
+            let bgColor = "";
+            if (periodIndex >= 0) {
+              if (isTotals) {
+                // Totals rows: Yellow for valid months and summary columns
+                if ((isMonthColumn && isInValidMonth) || isSummaryColumn) {
+                  bgColor = "#FFFFE5";
+                }
+              } else if (platformIndex >= 0) {
+                // Platform rows: Apply alternating colors by period (pink, green, pink, green...)
+                // Only apply to valid month columns (not summary columns for platform rows)
+                if (isMonthColumn && isInValidMonth) {
+                  // Alternate by period: even periods = pink, odd periods = green
+                  bgColor = periodIndex % 2 === 0 ? "#FFE5E5" : "#E5FFE5";
+                }
+              }
+            }
+            
+            // Determine if this column should have dark borders
+            // Dark borders for: date column (0), platform column (1), and valid month columns
+            const shouldHaveDarkBorder = col === 0 || col === 1 || (isMonthColumn && isInValidMonth);
+            
+            // Add dark-border-cell class for cells that should have dark borders
+            if (shouldHaveDarkBorder) {
+              classNames.push("dark-border-cell");
+            }
+            
+            // Set up renderer with background color
             if (col >= 2) {
-              props.renderer = numberRenderer as any;
+              props.renderer = function(
+                instance: any,
+                td: HTMLTableCellElement,
+                r: number,
+                c: number,
+                prop: any,
+                value: any,
+                cellProperties: any
+              ) {
+                // Apply background color if specified
+                if (bgColor) {
+                  td.style.backgroundColor = bgColor;
+                } else if (isMonthColumn) {
+                  // Clear background for invalid months
+                  td.style.backgroundColor = "";
+                }
+                
+                // Use the number renderer for formatting
+                numberRenderer(instance, td, r, c, prop, value, cellProperties);
+              };
+            } else {
+              // For date and platform columns (col 0 and 1), use text renderer
+              props.renderer = function(
+                instance: any,
+                td: HTMLTableCellElement,
+                r: number,
+                c: number,
+                prop: any,
+                value: any,
+                cellProperties: any
+              ) {
+                // Use default text renderer
+                textRenderer(instance, td, r, c, prop, value, cellProperties);
+              };
             }
             
             // Apply summary cell styling
-            const summaryStart = 2 + months.length * 3;
-            if (col >= summaryStart && col < summaryStart + SUMMARY_COLUMNS.length) {
+            if (isSummaryColumn) {
               classNames.push("summary-cell");
             }
             
-            // Apply totals row styling - check if this row is a totals row for any period
-            // Exclude date column (col 0) from totals styling
-            if (showTotals && visiblePlatforms.length > 0 && salesOrdersList.length > 0 && col > 0) {
-              salesOrdersList.forEach((_, periodIndex) => {
-                const rowsPerPeriod = visiblePlatforms.length + 1;
-                const totalsRowIndex = periodIndex * rowsPerPeriod + visiblePlatforms.length;
-                if (row === totalsRowIndex) {
-                  classNames.push("totals-cell");
-                  if (col === 1) {
-                    classNames.push("totals-cell-label");
-                  }
-                }
-              });
+            // Apply totals row styling
+            if (isTotals && col > 0) {
+              classNames.push("totals-cell");
+              if (col === 1) {
+                classNames.push("totals-cell-label");
+              }
             }
             
             // Mark date column clickable in edit mode
@@ -630,7 +865,18 @@ export default function DemandWaterfallTable({
                   if (ok) onDateDelete?.(label);
                 } else if (event?.button === 0) {
                   // Left-click: edit
-                  onDateEdit?.(label);
+                  let anchor: DateAnchor | undefined;
+                  const target = (event?.target as HTMLElement | null)?.closest("td") as HTMLElement | null;
+                  const rect = target?.getBoundingClientRect();
+                  if (rect) {
+                    anchor = {
+                      top: rect.bottom + window.scrollY,
+                      left: rect.left + window.scrollX,
+                      width: rect.width,
+                      height: rect.height,
+                    };
+                  }
+                  onDateEdit?.(label, anchor);
                 }
               }
             } catch {
