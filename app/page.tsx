@@ -25,7 +25,7 @@ const MONTH_LOOKUP: Record<string, number> = {
 
 export default function Home() {
   const [salesOrdersList, setSalesOrdersList] = useState<SalesOrderSummary[]>([]);
-  const [forecastSummary, setForecastSummary] = useState<ForecastSummary | null>(null);
+  const [forecastSummaryList, setForecastSummaryList] = useState<ForecastSummary[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [editingDateLabel, setEditingDateLabel] = useState<string | null>(null);
@@ -46,8 +46,12 @@ export default function Home() {
       }
       if (fcJson) {
         const parsed = JSON.parse(fcJson);
-        if (parsed && typeof parsed === "object") {
-          setForecastSummary(parsed);
+        // Support both old format (single object) and new format (array)
+        if (Array.isArray(parsed)) {
+          setForecastSummaryList(parsed);
+        } else if (parsed && typeof parsed === "object" && parsed.uploadDateLabel) {
+          // Migrate old single forecast to array format
+          setForecastSummaryList([parsed]);
         }
       }
     } catch {
@@ -66,11 +70,11 @@ export default function Home() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("mvst_forecastSummary", JSON.stringify(forecastSummary));
+      localStorage.setItem("mvst_forecastSummary", JSON.stringify(forecastSummaryList));
     } catch {
       // ignore
     }
-  }, [forecastSummary]);
+  }, [forecastSummaryList]);
 
   const handleSalesOrdersUpload = useCallback(async (file: File) => {
     try {
@@ -92,16 +96,17 @@ export default function Home() {
       await uploadFileToSupabase(bucketName, file, "forecasts");
       const csvText = await file.text();
       const summary = parseForecastCsv(csvText, new Date());
-      setForecastSummary(summary);
+      if (summary) {
+        setForecastSummaryList((prev) => [...prev, summary]);
+      }
     } catch (error) {
       console.error("Failed to process Forecast CSV", error);
-      setForecastSummary(null);
     }
   }, []);
 
   const handleDeleteByDate = useCallback((dateLabel: string) => {
     setSalesOrdersList((prev) => prev.filter((so) => so.uploadDateLabel !== dateLabel));
-    setForecastSummary((prev) => (prev?.uploadDateLabel === dateLabel ? null : prev));
+    setForecastSummaryList((prev) => prev.filter((fc) => fc.uploadDateLabel !== dateLabel));
   }, []);
 
   const buildMonthsForUploadDate = useCallback((date: Date) => {
@@ -170,17 +175,17 @@ export default function Home() {
     const newDateLabel = formatFullDate(newDate);
 
     // Update forecast if it matches
-    if (forecastSummary && forecastSummary.uploadDateLabel === editingDateLabel) {
-      setForecastSummary((prev) =>
-        prev
+    setForecastSummaryList((prev) =>
+      prev.map((fc) =>
+        fc.uploadDateLabel === editingDateLabel
           ? {
-              ...prev,
+              ...fc,
               uploadDateLabel: newDateLabel,
               months,
             }
-          : prev
-      );
-    }
+          : fc
+      )
+    );
 
     // Update sales orders if any match
     setSalesOrdersList((prev) =>
@@ -200,12 +205,12 @@ export default function Home() {
     setEditingDateLabel(null);
     setEditingDate(undefined);
     setEditingAnchor(null);
-  }, [editingDateLabel, forecastSummary, buildMonthsForUploadDate]);
+  }, [editingDateLabel, buildMonthsForUploadDate]);
 
   return (
     <main className="min-h-screen p-6 md:p-10 flex flex-col gap-6 bg-white">
       <header className="space-y-2">
-        <h1 className="text-xl md:text-2xl font-semibold">MVST Demand Waterfall</h1>
+        <h1 className="text-xl md:text-2xl font-semibold">MVS-T Demand Waterfall</h1>
       </header>
       <section className="space-y-3">
         <div className="flex items-end justify-between gap-3 flex-wrap">
@@ -220,7 +225,7 @@ export default function Home() {
         <div className="overflow-auto rounded-lg border border-neutral-200/60 bg-white">
           <DemandWaterfallTable
             salesOrdersList={salesOrdersList}
-            forecastSummary={forecastSummary}
+            forecastSummaryList={forecastSummaryList}
             editMode={editMode}
             onDateEdit={handleDateEdit}
             onDateDelete={handleDateDelete}

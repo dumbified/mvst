@@ -101,7 +101,7 @@ export default function UploadControls({
       </div>
 
       {open ? (
-        <div className="absolute right-0 top-full mt-2 z-[6000] w-full max-w-md rounded-lg border border-neutral-200 bg-white p-3 shadow-lg">
+        <div className="absolute right-0 top-full mt-2 z-[6000] w-full min-w-[400px] rounded-lg border border-neutral-200 bg-white p-3 shadow-lg">
           <div className="text-sm font-medium text-neutral-800 mb-2">Upload files</div>
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">

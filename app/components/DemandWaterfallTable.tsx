@@ -36,15 +36,27 @@ const DEFAULT_MONTHS: MonthColumn[] = [
 
 const PLATFORM_OPTIONS: PlatformKey[] = [...PLATFORM_LABELS];
 
-const SUMMARY_COLUMNS: { key: string; label: string; width: number }[] = [
-  { key: "currTotalSo", label: "Current total SO", width: 90 },
-  { key: "currTotalFcst", label: "Current total f'cst", width: 100 },
-  { key: "ttlDmd", label: "Ttl Dmd", width: 80 },
-  { key: "bomCostRm", label: "BOM Cost (RM)", width: 100 },
-  { key: "currTotalSoRm", label: "Current total SO (RM)", width: 125 },
-  { key: "currTotalFcstRm", label: "Current total f'cst (RM)", width: 135 },
-  { key: "ttlDmdRm", label: "Ttl Dmd (RM)", width: 110 },
+const SUMMARY_COLUMNS: { key: string; label: string }[] = [
+  { key: "currTotalSo", label: "Current total SO" },
+  { key: "currTotalFcst", label: "Current total f'cst" },
+  { key: "ttlDmd", label: "Ttl Dmd" },
+  { key: "bomCostRm", label: "BOM Cost (RM)" },
+  { key: "currTotalSoRm", label: "Current total SO (RM)" },
+  { key: "currTotalFcstRm", label: "Current total f'cst (RM)" },
+  { key: "ttlDmdRm", label: "Ttl Dmd (RM)" },
 ];
+
+const SUMMARY_COLUMN_WIDTHS: Record<string, number> = {
+  currTotalSo: 90,
+  currTotalFcst: 100,
+  ttlDmd: 80,
+  bomCostRm: 100,
+  currTotalSoRm: 125,
+  currTotalFcstRm: 135,
+  ttlDmdRm: 110,
+};
+
+const TABLE_FONT_SIZE_PX = 10;
 
 const DEFAULT_BOM_COSTS: Record<string, number> = {
   TH3K: 583382,
@@ -57,7 +69,7 @@ type DateAnchor = { top: number; left: number; width: number; height: number };
 
 type DemandWaterfallTableProps = {
   salesOrdersList?: SalesOrderSummary[];
-  forecastSummary?: ForecastSummary | null;
+  forecastSummaryList?: ForecastSummary[];
   editMode?: boolean;
   onDateEdit?: (dateLabel: string, anchor?: DateAnchor) => void;
   onDateDelete?: (dateLabel: string) => void;
@@ -65,7 +77,7 @@ type DemandWaterfallTableProps = {
 
 export default function DemandWaterfallTable({
   salesOrdersList = [],
-  forecastSummary,
+  forecastSummaryList = [],
   editMode = false,
   onDateEdit,
   onDateDelete,
@@ -83,7 +95,7 @@ export default function DemandWaterfallTable({
     return obj;
   });
 
-  // Merge all months from uploads and forecast
+  // Merge all months from uploads and forecasts
   const months = useMemo<MonthColumn[]>(() => {
     const monthSet = new Set<string>();
     const labelMap = new Map<string, string>();
@@ -98,7 +110,7 @@ export default function DemandWaterfallTable({
     };
 
     salesOrdersList.forEach((so) => addMonths(so.months));
-    addMonths(forecastSummary?.months ?? []);
+    forecastSummaryList.forEach((fc) => addMonths(fc.months));
 
     if (monthSet.size === 0) return DEFAULT_MONTHS;
 
@@ -108,7 +120,7 @@ export default function DemandWaterfallTable({
         key,
         label: labelMap.get(key) ?? formatMonthLabel(key),
       }));
-  }, [salesOrdersList, forecastSummary]);
+  }, [salesOrdersList, forecastSummaryList]);
 
   const visiblePlatforms = useMemo(
     () => PLATFORM_OPTIONS.filter((platform) => selectedPlatforms.includes(platform)),
@@ -184,31 +196,36 @@ export default function DemandWaterfallTable({
     }
 
     const rows: (string | number)[][] = [];
-    const forecastTotals: Record<PlatformKey, Record<string, number>> =
-      forecastSummary?.totals ?? ({} as Record<PlatformKey, Record<string, number>>);
+
+    // Create a map of forecasts by uploadDateLabel for quick lookup
+    const forecastMap = new Map<string, ForecastSummary>();
+    forecastSummaryList.forEach((fc) => {
+      forecastMap.set(fc.uploadDateLabel, fc);
+    });
 
     const effectivePeriods =
       salesOrdersList.length > 0
         ? salesOrdersList
-        : forecastSummary
-        ? [
-            {
-              uploadDateLabel: forecastSummary.uploadDateLabel,
-              months: forecastSummary.months,
-              totals: PLATFORM_LABELS.reduce(
-                (acc, platform) => ({
-                  ...acc,
-                  [platform]: {},
-                }),
-                {} as Record<PlatformKey, Record<string, SalesOrderBucket>>,
-              ),
-            },
-          ]
+        : forecastSummaryList.length > 0
+        ? forecastSummaryList.map((fc) => ({
+            uploadDateLabel: fc.uploadDateLabel,
+            months: fc.months,
+            totals: PLATFORM_LABELS.reduce(
+              (acc, platform) => ({
+                ...acc,
+                [platform]: {},
+              }),
+              {} as Record<PlatformKey, Record<string, SalesOrderBucket>>,
+            ),
+          }))
         : [];
 
     // Create rows for each period (upload date) and platform combination
     effectivePeriods.forEach((salesOrders) => {
       const periodRows: (string | number)[][] = [];
+
+      // Find the forecast for this specific period
+      const periodForecast = forecastMap.get(salesOrders.uploadDateLabel);
 
       visiblePlatforms.forEach((platform) => {
         const row: (string | number)[] = [];
@@ -219,11 +236,11 @@ export default function DemandWaterfallTable({
         let fcstSum = 0;
 
         const orderTotals = salesOrders.totals[platform] ?? {};
-        const platformForecast = forecastTotals[platform] ?? {};
+        const platformForecast = periodForecast?.totals[platform] ?? {};
         
         // Get the valid months for this period (months >= upload month)
         const periodMonthKeys = new Set(salesOrders.months.map(m => m.key));
-        const forecastMonthKeys = forecastSummary ? new Set(forecastSummary.months.map(m => m.key)) : new Set<string>();
+        const forecastMonthKeys = periodForecast ? new Set(periodForecast.months.map(m => m.key)) : new Set<string>();
 
         months.forEach((month) => {
           // Only show data if this month is >= the period's upload month
@@ -301,7 +318,7 @@ export default function DemandWaterfallTable({
     });
 
     return rows;
-  }, [salesOrdersList, visiblePlatforms, months, bomCosts, showTotals, forecastSummary]);
+  }, [salesOrdersList, visiblePlatforms, months, bomCosts, showTotals, forecastSummaryList]);
 
   const nestedHeaders = useMemo(() => {
     const topRow: any[] = [
@@ -322,7 +339,7 @@ export default function DemandWaterfallTable({
   const colWidths = useMemo(() => {
     const widths: number[] = [120, 90];
     months.forEach(() => widths.push(60, 60, 60));
-    SUMMARY_COLUMNS.forEach((c) => widths.push(c.width));
+    SUMMARY_COLUMNS.forEach((c) => widths.push(SUMMARY_COLUMN_WIDTHS[c.key] ?? 90));
     return widths;
   }, [months]);
 
@@ -335,7 +352,7 @@ export default function DemandWaterfallTable({
   const mergeBodyCells = useMemo(() => {
     const rowsPerPeriod = showTotals ? visiblePlatforms.length + 1 : visiblePlatforms.length;
     const periodCount =
-      salesOrdersList.length > 0 ? salesOrdersList.length : forecastSummary ? 1 : 0;
+      salesOrdersList.length > 0 ? salesOrdersList.length : forecastSummaryList.length;
     if (visiblePlatforms.length <= 1 || periodCount === 0 || rowsPerPeriod <= 1) {
       return [];
     }
@@ -351,11 +368,11 @@ export default function DemandWaterfallTable({
       });
     }
     return merges;
-  }, [visiblePlatforms, salesOrdersList, forecastSummary, showTotals]);
+  }, [visiblePlatforms, salesOrdersList, forecastSummaryList, showTotals]);
 
   const totalsCellMeta = useMemo(() => {
     const periodCount =
-      salesOrdersList.length > 0 ? salesOrdersList.length : forecastSummary ? 1 : 0;
+      salesOrdersList.length > 0 ? salesOrdersList.length : forecastSummaryList.length;
     if (visiblePlatforms.length === 0 || periodCount === 0 || !showTotals) return [];
     const totalCols = 2 + months.length * 3 + SUMMARY_COLUMNS.length;
     const cells: any[] = [];
@@ -376,7 +393,7 @@ export default function DemandWaterfallTable({
     }
     
     return cells;
-  }, [visiblePlatforms, months, salesOrdersList, forecastSummary, showTotals]);
+  }, [visiblePlatforms, months, salesOrdersList, forecastSummaryList, showTotals]);
 
   // Style all cells in the summary area
   const summaryCellMeta = useMemo(() => {
@@ -385,7 +402,7 @@ export default function DemandWaterfallTable({
     const rowsPerPeriod = showTotals ? visiblePlatforms.length + 1 : visiblePlatforms.length;
     if (rowsPerPeriod === 0) return meta;
     const periodCount =
-      salesOrdersList.length > 0 ? salesOrdersList.length : forecastSummary ? 1 : 0;
+      salesOrdersList.length > 0 ? salesOrdersList.length : forecastSummaryList.length;
     const numRows = periodCount * rowsPerPeriod;
     for (let r = 0; r < numRows; r++) {
       for (let i = 0; i < SUMMARY_COLUMNS.length; i++) {
@@ -397,27 +414,25 @@ export default function DemandWaterfallTable({
       }
     }
     return meta;
-  }, [months, visiblePlatforms, salesOrdersList, forecastSummary, showTotals]);
+  }, [months, visiblePlatforms, salesOrdersList, forecastSummaryList, showTotals]);
 
   // Helper to get row metadata (period, platform index, isTotals, valid months)
   const getRowMetadata = useMemo(() => {
     const effectivePeriods =
       salesOrdersList.length > 0
         ? salesOrdersList
-        : forecastSummary
-        ? [
-            {
-              uploadDateLabel: forecastSummary.uploadDateLabel,
-              months: forecastSummary.months,
-              totals: PLATFORM_LABELS.reduce(
-                (acc, platform) => ({
-                  ...acc,
-                  [platform]: {},
-                }),
-                {} as Record<PlatformKey, Record<string, SalesOrderBucket>>,
-              ),
-            },
-          ]
+        : forecastSummaryList.length > 0
+        ? forecastSummaryList.map((fc) => ({
+            uploadDateLabel: fc.uploadDateLabel,
+            months: fc.months,
+            totals: PLATFORM_LABELS.reduce(
+              (acc, platform) => ({
+                ...acc,
+                [platform]: {},
+              }),
+              {} as Record<PlatformKey, Record<string, SalesOrderBucket>>,
+            ),
+          }))
         : [];
     
     const rowsPerPeriod = showTotals ? visiblePlatforms.length + 1 : visiblePlatforms.length;
@@ -437,7 +452,7 @@ export default function DemandWaterfallTable({
       
       return { periodIndex, platformIndex, isTotals, validMonthKeys };
     };
-  }, [salesOrdersList, visiblePlatforms, showTotals, forecastSummary]);
+  }, [salesOrdersList, visiblePlatforms, showTotals, forecastSummaryList]);
 
   const cellComments = useMemo(() => {
     if (salesOrdersList.length === 0) return [];
@@ -490,6 +505,73 @@ export default function DemandWaterfallTable({
     };
   }, []);
 
+  // Function to reapply borders to all cells
+  const reapplyBorders = useMemo(() => {
+    return () => {
+      if (hotTableRef.current?.hotInstance) {
+        const hot = hotTableRef.current.hotInstance;
+        const container = hot.rootElement;
+        if (!container) return;
+        
+        // Reapply border classes to header cells
+        const allHeaderCells = container.querySelectorAll('thead th, .ht_clone_top thead th, .ht_clone_left_top thead th');
+        allHeaderCells.forEach((cell: any) => {
+          if (!cell.classList.contains('summary-header') && !cell.classList.contains('summary-subheader')) {
+            cell.classList.add("dark-border-header");
+            // Force border style to ensure it persists
+            cell.style.border = "0.1px solid #000000";
+          } else {
+            cell.classList.remove("dark-border-header");
+          }
+        });
+        
+        // Reapply border classes to data cells
+        const totalRows = hot.countRows();
+        const summaryStart = 2 + months.length * 3;
+        
+        for (let row = 0; row < totalRows; row++) {
+          const metadata = getRowMetadata(row);
+          const { validMonthKeys } = metadata;
+          
+          for (let col = 0; col < hot.countCols(); col++) {
+            try {
+              const cell = hot.getCell(row, col);
+              if (cell) {
+                // Determine if this column should have dark borders
+                const isMonthColumn = col >= 2 && col < summaryStart;
+                let isInValidMonth = false;
+                if (isMonthColumn) {
+                  const monthIndex = Math.floor((col - 2) / 3);
+                  if (monthIndex >= 0 && monthIndex < months.length) {
+                    const monthKey = months[monthIndex].key;
+                    isInValidMonth = validMonthKeys.has(monthKey);
+                  }
+                }
+                
+                // Apply dark border only for: date column (0), platform column (1), and valid month columns
+                const shouldHaveDarkBorder = col === 0 || col === 1 || (isMonthColumn && isInValidMonth);
+                
+                if (shouldHaveDarkBorder) {
+                  cell.classList.add("dark-border-cell");
+                  // Force border style to ensure it persists even in edit mode
+                  cell.style.border = "0.1px solid #000000";
+                } else {
+                  cell.classList.remove("dark-border-cell");
+                  if (isMonthColumn) {
+                    // Clear border for invalid months
+                    cell.style.border = "";
+                  }
+                }
+              }
+            } catch (e) {
+              // Ignore errors for cells that don't exist
+            }
+          }
+        }
+      }
+    };
+  }, [months, getRowMetadata]);
+
   useEffect(() => {
     if (hotTableRef.current?.hotInstance) {
       const hot = hotTableRef.current.hotInstance;
@@ -499,70 +581,49 @@ export default function DemandWaterfallTable({
       if (container) {
         // Target all header cells in the main table and clones
         const headerCells = container.querySelectorAll('thead th, .ht_clone_top thead th, .ht_clone_left_top thead th');
+        const headerFontSize = `${TABLE_FONT_SIZE_PX}px`;
         headerCells.forEach((cell: any) => {
           if (cell) {
-            cell.style.fontSize = '11px';
+            cell.style.fontSize = headerFontSize;
             cell.style.fontWeight = 'bold';
             // Also target any nested elements
             const nested = cell.querySelectorAll('*');
             nested.forEach((el: any) => {
-              el.style.fontSize = '11px';
+              el.style.fontSize = headerFontSize;
             });
           }
         });
-        
-        // Apply border classes to header cells (all except summary headers)
-        const allHeaderCells = container.querySelectorAll('thead th, .ht_clone_top thead th, .ht_clone_left_top thead th');
-        allHeaderCells.forEach((cell: any) => {
-          // Apply borders to all header cells except summary headers
-          if (!cell.classList.contains('summary-header') && !cell.classList.contains('summary-subheader')) {
-            cell.classList.add("dark-border-header");
-          } else {
-            cell.classList.remove("dark-border-header");
-          }
-        });
-        
       }
       
-      // Ensure all data cells are not bold and have correct font size, and apply conditional borders
-      const totalRows = hot.countRows();
-      const summaryStart = 2 + months.length * 3;
+      // Apply borders initially
+      reapplyBorders();
       
-      for (let row = 0; row < totalRows; row++) {
-        const metadata = getRowMetadata(row);
-        const { validMonthKeys } = metadata;
-        
-        for (let col = 0; col < hot.countCols(); col++) {
-          const cell = hot.getCell(row, col);
-          if (cell) {
-            cell.style.fontWeight = "normal";
-            cell.style.fontSize = "11px";
-            
-            // Determine if this column should have dark borders
-            const isMonthColumn = col >= 2 && col < summaryStart;
-            let isInValidMonth = false;
-            if (isMonthColumn) {
-              const monthIndex = Math.floor((col - 2) / 3);
-              if (monthIndex >= 0 && monthIndex < months.length) {
-                const monthKey = months[monthIndex].key;
-                isInValidMonth = validMonthKeys.has(monthKey);
-              }
-            }
-            
-            // Apply dark border only for: date column (0), platform column (1), and valid month columns
-            const shouldHaveDarkBorder = col === 0 || col === 1 || (isMonthColumn && isInValidMonth);
-            
-            // Add or remove dark-border-cell class
-            if (shouldHaveDarkBorder) {
-              cell.classList.add("dark-border-cell");
-            } else {
-              cell.classList.remove("dark-border-cell");
-            }
-          }
-        }
-      }
+      // Reapply borders after cell changes
+      const handleAfterChange = () => {
+        setTimeout(() => reapplyBorders(), 0);
+      };
+      
+      // Reapply borders after selection changes (when exiting edit mode)
+      const handleAfterSelectionEnd = () => {
+        setTimeout(() => reapplyBorders(), 0);
+      };
+      
+      // Reapply borders when edit mode changes
+      const handleAfterBeginEditing = () => {
+        setTimeout(() => reapplyBorders(), 0);
+      };
+      
+      hot.addHook('afterChange', handleAfterChange);
+      hot.addHook('afterSelectionEnd', handleAfterSelectionEnd);
+      hot.addHook('afterBeginEditing', handleAfterBeginEditing);
+      
+      return () => {
+        hot.removeHook('afterChange', handleAfterChange);
+        hot.removeHook('afterSelectionEnd', handleAfterSelectionEnd);
+        hot.removeHook('afterBeginEditing', handleAfterBeginEditing);
+      };
     }
-  }, [data, months, selectedPlatforms, getRowMetadata]);
+  }, [data, months, selectedPlatforms, getRowMetadata, editMode, reapplyBorders]);
 
   return (
     <div className="space-y-3">
@@ -604,7 +665,7 @@ export default function DemandWaterfallTable({
               setIsEditingCosts((v) => !v);
             }}
           >
-            Edit BOM Costs
+            Edit BOM Costs (RM)
           </button>
 
           {isEditingCosts && (
@@ -652,6 +713,20 @@ export default function DemandWaterfallTable({
       </div>
 
       <style>{`
+        .hot-waterfall .htCore,
+        .hot-waterfall .htCore td,
+        .hot-waterfall .htCore th,
+        .hot-waterfall .ht_clone_top thead th,
+        .hot-waterfall .ht_clone_left_top thead th {
+          font-size: ${TABLE_FONT_SIZE_PX}px !important;
+          line-height: 1.2;
+        }
+        .hot-waterfall .handsontableInput,
+        .hot-waterfall input,
+        .hot-waterfall textarea {
+          font-size: ${TABLE_FONT_SIZE_PX}px !important;
+        }
+        
         /* Ensure table uses border-collapse to prevent double borders */
         .hot-waterfall table,
         .hot-waterfall .ht_clone_top table,
@@ -665,7 +740,10 @@ export default function DemandWaterfallTable({
         /* Apply all borders - border-collapse will merge adjacent borders */
         .hot-waterfall .dark-border-cell,
         .hot-waterfall .dark-border-cell td,
-        .hot-waterfall .dark-border-cell th {
+        .hot-waterfall .dark-border-cell th,
+        .hot-waterfall .dark-border-cell.current,
+        .hot-waterfall .dark-border-cell.area,
+        .hot-waterfall .dark-border-cell.htInvalid {
           border: 0.1px solid #000000 !important;
         }
         .hot-waterfall .ht_clone_top .dark-border-cell,
@@ -677,6 +755,13 @@ export default function DemandWaterfallTable({
         .hot-waterfall .ht_clone_left_top .dark-border-cell,
         .hot-waterfall .ht_clone_left_top .dark-border-cell td,
         .hot-waterfall .ht_clone_left_top .dark-border-cell th {
+          border: 0.1px solid #000000 !important;
+        }
+        
+        /* Ensure borders persist even when cells are being edited */
+        .hot-waterfall .dark-border-cell input,
+        .hot-waterfall .dark-border-cell textarea,
+        .hot-waterfall .dark-border-cell .handsontableInput {
           border: 0.1px solid #000000 !important;
         }
         

@@ -4,7 +4,6 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
-import { formatFullDate } from "@/app/lib/salesOrders";
 
 type DatePickerDialogProps = {
   open: boolean;
@@ -25,6 +24,8 @@ export default function DatePickerDialog({
     date
   );
   const [mounted, setMounted] = React.useState(false);
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  const handlerRef = React.useRef<((event: MouseEvent) => void) | null>(null);
 
   React.useEffect(() => {
     setMounted(true);
@@ -34,6 +35,38 @@ export default function DatePickerDialog({
   React.useEffect(() => {
     setSelectedDate(date);
   }, [date, open]);
+
+  // Close on click outside
+  React.useEffect(() => {
+    if (!open) {
+      // Clean up handler when dialog closes
+      if (handlerRef.current) {
+        document.removeEventListener("mousedown", handlerRef.current);
+        handlerRef.current = null;
+      }
+      return;
+    }
+
+    // Add a small delay to prevent immediate closing when dialog opens
+    const timeoutId = setTimeout(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+        if (!dialogRef.current) return;
+        if (!dialogRef.current.contains(event.target as Node)) {
+          onOpenChange(false);
+        }
+      };
+      handlerRef.current = handleClickOutside;
+      document.addEventListener("mousedown", handleClickOutside);
+    }, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (handlerRef.current) {
+        document.removeEventListener("mousedown", handlerRef.current);
+        handlerRef.current = null;
+      }
+    };
+  }, [open, onOpenChange]);
 
   const handleSelect = (newDate: Date | undefined) => {
     if (newDate) {
@@ -52,9 +85,9 @@ export default function DatePickerDialog({
 
   const style: React.CSSProperties = anchor
     ? {
-        position: "absolute",
-        top: anchor.top + anchor.height + 4,
-        left: anchor.left,
+        position: "fixed",
+        top: anchor.top - anchor.height,
+        left: anchor.left + anchor.width + 4,
         zIndex: 5000,
       }
     : {
@@ -65,15 +98,10 @@ export default function DatePickerDialog({
       };
 
   const content = (
-    <div className="z-50" style={style}>
+    <div className="z-50" style={style} ref={dialogRef}>
       <div className="bg-white rounded-lg shadow-lg border border-neutral-200 p-3 w-[280px]">
         <div className="mb-3">
           <h3 className="text-sm font-medium mb-1">Select new date</h3>
-          {selectedDate && (
-            <p className="text-xs text-muted-foreground">
-              Current: {formatFullDate(selectedDate)}
-            </p>
-          )}
         </div>
         <Calendar
           mode="single"
