@@ -85,7 +85,7 @@ export default function DatePickerDialog({
 
   const style: React.CSSProperties = anchor
     ? {
-        position: "fixed",
+        position: "absolute",
         top: anchor.top - anchor.height,
         left: anchor.left + anchor.width + 4,
         zIndex: 5000,

@@ -5,56 +5,28 @@ import { HotTable } from "@handsontable/react-wrapper";
 import 'handsontable/styles/handsontable.min.css';
 import 'handsontable/styles/ht-theme-main.min.css';
 import { registerAllModules } from 'handsontable/registry';
-import {
-  PLATFORM_LABELS,
-  PlatformKey,
-  SalesOrderSummary,
-  SalesOrderBucket,
-  formatMonthLabel,
-} from "../lib/salesOrders";
+import { PLATFORM_LABELS, PlatformKey, SalesOrderSummary } from "../lib/salesOrders";
 import { ForecastSummary } from "../lib/forecasts";
 import { textRenderer } from "handsontable/renderers/textRenderer";
+import {
+  MonthColumn,
+  SUMMARY_COLUMNS,
+  buildCellComments,
+  buildDataRows,
+  buildEffectivePeriods,
+  computeMonths,
+  createColumnWidths,
+  createMergeCells,
+  createNestedHeaders,
+  createRowMetadataGetter,
+  createSummaryCellMeta,
+  createTotalsCellMeta,
+  getRowsPerPeriod,
+} from "../lib/waterfallTable";
 
 registerAllModules();
 
-type MonthColumn = { key: string; label: string };
-
-const DEFAULT_MONTHS: MonthColumn[] = [
-  { key: "2025-03", label: "Mar 25" },
-  { key: "2025-04", label: "Apr 25" },
-  { key: "2025-05", label: "May 25" },
-  { key: "2025-06", label: "Jun 25" },
-  { key: "2025-07", label: "Jul 25" },
-  { key: "2025-08", label: "Aug 25" },
-  { key: "2025-09", label: "Sep 25" },
-  { key: "2025-10", label: "Oct 25" },
-  { key: "2025-11", label: "Nov 25" },
-  { key: "2025-12", label: "Dec 25" },
-  { key: "2026-01", label: "Jan 26" },
-  { key: "2026-02", label: "Feb 26" },
-];
-
 const PLATFORM_OPTIONS: PlatformKey[] = [...PLATFORM_LABELS];
-
-const SUMMARY_COLUMNS: { key: string; label: string }[] = [
-  { key: "currTotalSo", label: "Current total SO" },
-  { key: "currTotalFcst", label: "Current total f'cst" },
-  { key: "ttlDmd", label: "Ttl Dmd" },
-  { key: "bomCostRm", label: "BOM Cost (RM)" },
-  { key: "currTotalSoRm", label: "Current total SO (RM)" },
-  { key: "currTotalFcstRm", label: "Current total f'cst (RM)" },
-  { key: "ttlDmdRm", label: "Ttl Dmd (RM)" },
-];
-
-const SUMMARY_COLUMN_WIDTHS: Record<string, number> = {
-  currTotalSo: 90,
-  currTotalFcst: 100,
-  ttlDmd: 80,
-  bomCostRm: 100,
-  currTotalSoRm: 125,
-  currTotalFcstRm: 135,
-  ttlDmdRm: 110,
-};
 
 const TABLE_FONT_SIZE_PX = 10;
 
@@ -96,31 +68,10 @@ export default function DemandWaterfallTable({
   });
 
   // Merge all months from uploads and forecasts
-  const months = useMemo<MonthColumn[]>(() => {
-    const monthSet = new Set<string>();
-    const labelMap = new Map<string, string>();
-
-    const addMonths = (entries?: { key: string; label: string }[]) => {
-      entries?.forEach(({ key, label }) => {
-        monthSet.add(key);
-        if (!labelMap.has(key)) {
-          labelMap.set(key, label);
-        }
-      });
-    };
-
-    salesOrdersList.forEach((so) => addMonths(so.months));
-    forecastSummaryList.forEach((fc) => addMonths(fc.months));
-
-    if (monthSet.size === 0) return DEFAULT_MONTHS;
-
-    return Array.from(monthSet)
-      .sort()
-      .map((key) => ({
-        key,
-        label: labelMap.get(key) ?? formatMonthLabel(key),
-      }));
-  }, [salesOrdersList, forecastSummaryList]);
+  const months = useMemo<MonthColumn[]>(
+    () => computeMonths(salesOrdersList, forecastSummaryList),
+    [salesOrdersList, forecastSummaryList],
+  );
 
   const visiblePlatforms = useMemo(
     () => PLATFORM_OPTIONS.filter((platform) => selectedPlatforms.includes(platform)),
@@ -175,173 +126,33 @@ export default function DemandWaterfallTable({
       }
     };
 
-    // Position popup relative to button
-    if (bomEditorButtonRef.current && bomEditorPopupRef.current) {
-      const buttonRect = bomEditorButtonRef.current.getBoundingClientRect();
-      const popup = bomEditorPopupRef.current;
-      popup.style.position = "fixed";
-      popup.style.top = `${buttonRect.bottom + window.scrollY + 4}px`;
-      popup.style.right = `${window.innerWidth - buttonRect.right}px`;
-    }
-
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isEditingCosts]);
 
-  const data = useMemo(() => {
-    if (visiblePlatforms.length === 0) {
-      return [];
-    }
+  const effectivePeriods = useMemo(
+    () => buildEffectivePeriods(salesOrdersList, forecastSummaryList),
+    [salesOrdersList, forecastSummaryList],
+  );
 
-    const rows: (string | number)[][] = [];
+  const data = useMemo(
+    () =>
+      buildDataRows({
+        effectivePeriods,
+        forecastSummaryList,
+        visiblePlatforms,
+        months,
+        bomCosts,
+        showTotals,
+      }),
+    [bomCosts, effectivePeriods, forecastSummaryList, months, showTotals, visiblePlatforms],
+  );
 
-    // Create a map of forecasts by uploadDateLabel for quick lookup
-    const forecastMap = new Map<string, ForecastSummary>();
-    forecastSummaryList.forEach((fc) => {
-      forecastMap.set(fc.uploadDateLabel, fc);
-    });
+  const nestedHeaders = useMemo(() => createNestedHeaders(months), [months]);
 
-    const effectivePeriods =
-      salesOrdersList.length > 0
-        ? salesOrdersList
-        : forecastSummaryList.length > 0
-        ? forecastSummaryList.map((fc) => ({
-            uploadDateLabel: fc.uploadDateLabel,
-            months: fc.months,
-            totals: PLATFORM_LABELS.reduce(
-              (acc, platform) => ({
-                ...acc,
-                [platform]: {},
-              }),
-              {} as Record<PlatformKey, Record<string, SalesOrderBucket>>,
-            ),
-          }))
-        : [];
-
-    // Create rows for each period (upload date) and platform combination
-    effectivePeriods.forEach((salesOrders) => {
-      const periodRows: (string | number)[][] = [];
-
-      // Find the forecast for this specific period
-      const periodForecast = forecastMap.get(salesOrders.uploadDateLabel);
-
-      visiblePlatforms.forEach((platform) => {
-        const row: (string | number)[] = [];
-        row.push(salesOrders.uploadDateLabel);
-        row.push(platform);
-
-        let soSum = 0;
-        let fcstSum = 0;
-
-        const orderTotals = salesOrders.totals[platform] ?? {};
-        const platformForecast = periodForecast?.totals[platform] ?? {};
-        
-        // Get the valid months for this period (months >= upload month)
-        const periodMonthKeys = new Set(salesOrders.months.map(m => m.key));
-        const forecastMonthKeys = periodForecast ? new Set(periodForecast.months.map(m => m.key)) : new Set<string>();
-
-        months.forEach((month) => {
-          // Only show data if this month is >= the period's upload month
-          const isPeriodMonth = periodMonthKeys.has(month.key);
-          // Forecast should only show if month >= forecast upload month AND month >= period upload month
-          const isForecastMonth = forecastMonthKeys.has(month.key) && isPeriodMonth;
-          
-          const bucket = isPeriodMonth ? orderTotals[month.key] : undefined;
-          const soVal = isPeriodMonth ? Number(bucket?.quantity ?? 0) : 0;
-          const fcstVal = isForecastMonth ? Number(platformForecast[month.key] ?? 0) : 0;
-          const ssVal = 0; // placeholder for safety stock
-          row.push(soVal || "");
-          row.push(fcstVal || "");
-          row.push(ssVal || "");
-          soSum += soVal;
-          fcstSum += fcstVal;
-        });
-
-        const cost = bomCosts[platform] ?? 0;
-        const ttl = soSum + fcstSum;
-        const soRm = soSum * cost;
-        const fcstRm = fcstSum * cost;
-        const ttlRm = ttl * cost;
-
-        row.push(soSum);
-        row.push(fcstSum);
-        row.push(ttl);
-        row.push(cost);
-        row.push(soRm);
-        row.push(fcstRm);
-        row.push(ttlRm);
-
-        periodRows.push(row);
-        rows.push(row);
-      });
-
-      // Add totals row for this period (only if showTotals is true)
-      if (showTotals) {
-        const totalsRow: (string | number)[] = [];
-        totalsRow.push(""); // Empty date so it merges with the date above
-        totalsRow.push("Total");
-
-        for (let mi = 0; mi < months.length; mi++) {
-          const soColIndex = 2 + mi * 3;
-          const fcstColIndex = soColIndex + 1;
-          const ssColIndex = soColIndex + 2;
-          let soSum = 0;
-          let fcstSum = 0;
-          let ssSum = 0;
-          periodRows.forEach((r) => {
-            soSum += Number(r[soColIndex] || 0);
-            fcstSum += Number(r[fcstColIndex] || 0);
-            ssSum += Number(r[ssColIndex] || 0);
-          });
-          totalsRow.push(soSum || "");
-          totalsRow.push(fcstSum || "");
-          totalsRow.push(ssSum || "");
-        }
-
-        // Summary columns totals for this period
-        const summaryStart = 2 + months.length * 3;
-        for (let i = 0; i < SUMMARY_COLUMNS.length; i++) {
-          const colDef = SUMMARY_COLUMNS[i];
-          if (colDef.key === "bomCostRm") {
-            totalsRow.push("");
-            continue;
-          }
-          let sum = 0;
-          periodRows.forEach((r) => (sum += Number(r[summaryStart + i] || 0)));
-          totalsRow.push(sum || "");
-        }
-
-        rows.push(totalsRow);
-      }
-    });
-
-    return rows;
-  }, [salesOrdersList, visiblePlatforms, months, bomCosts, showTotals, forecastSummaryList]);
-
-  const nestedHeaders = useMemo(() => {
-    const topRow: any[] = [
-      { label: "Fcast Load in Date", colspan: 1 },
-      { label: "Platform", colspan: 1 },
-      ...months.map((month) => ({ label: month.label, colspan: 3 })),
-      { label: "Summary", colspan: SUMMARY_COLUMNS.length, className: "summary-header" },
-    ];
-    const secondRow: any[] = [
-      "",
-      "",
-      ...months.flatMap(() => ["SO", "Forecast", "SS"]),
-      ...SUMMARY_COLUMNS.map((c) => ({ label: c.label, className: "summary-subheader" })),
-    ];
-    return [topRow, secondRow];
-  }, [months]);
-
-  const colWidths = useMemo(() => {
-    const widths: number[] = [120, 90];
-    months.forEach(() => widths.push(60, 60, 60));
-    SUMMARY_COLUMNS.forEach((c) => widths.push(SUMMARY_COLUMN_WIDTHS[c.key] ?? 90));
-    return widths;
-  }, [months]);
+  const colWidths = useMemo(() => createColumnWidths(months), [months]);
 
   const togglePlatform = (platform: string) => {
     setSelectedPlatforms((prev) =>
@@ -349,144 +160,61 @@ export default function DemandWaterfallTable({
     );
   };
 
-  const mergeBodyCells = useMemo(() => {
-    const rowsPerPeriod = showTotals ? visiblePlatforms.length + 1 : visiblePlatforms.length;
-    const periodCount =
-      salesOrdersList.length > 0 ? salesOrdersList.length : forecastSummaryList.length;
-    if (visiblePlatforms.length <= 1 || periodCount === 0 || rowsPerPeriod <= 1) {
-      return [];
-    }
+  const rowsPerPeriod = useMemo(
+    () => getRowsPerPeriod(showTotals, visiblePlatforms.length),
+    [showTotals, visiblePlatforms],
+  );
 
-    const merges: any[] = [];
-    for (let periodIndex = 0; periodIndex < periodCount; periodIndex++) {
-      const startRow = periodIndex * rowsPerPeriod;
-      merges.push({
-        row: startRow,
-        col: 0,
-        rowspan: rowsPerPeriod,
-        colspan: 1,
-      });
-    }
-    return merges;
-  }, [visiblePlatforms, salesOrdersList, forecastSummaryList, showTotals]);
+  const periodCount = effectivePeriods.length;
 
-  const totalsCellMeta = useMemo(() => {
-    const periodCount =
-      salesOrdersList.length > 0 ? salesOrdersList.length : forecastSummaryList.length;
-    if (visiblePlatforms.length === 0 || periodCount === 0 || !showTotals) return [];
-    const totalCols = 2 + months.length * 3 + SUMMARY_COLUMNS.length;
-    const cells: any[] = [];
-    
-    // Add totals row styling for each period (excluding date column 0)
-    for (let periodIndex = 0; periodIndex < periodCount; periodIndex++) {
-      const rowsPerPeriod = visiblePlatforms.length + 1;
-      const totalsRowIndex = periodIndex * rowsPerPeriod + visiblePlatforms.length;
-      // Start from column 1 (skip date column 0)
-      for (let c = 1; c < totalCols; c++) {
-        cells.push({
-          row: totalsRowIndex,
-          col: c,
-          className: "totals-cell",
-        });
-      }
-      cells.push({ row: totalsRowIndex, col: 1, className: "totals-cell totals-cell-label" });
-    }
-    
-    return cells;
-  }, [visiblePlatforms, months, salesOrdersList, forecastSummaryList, showTotals]);
+  const mergeBodyCells = useMemo(
+    () => createMergeCells(periodCount, rowsPerPeriod),
+    [periodCount, rowsPerPeriod],
+  );
 
-  // Style all cells in the summary area
-  const summaryCellMeta = useMemo(() => {
-    const meta: any[] = [];
-    const summaryStart = 2 + months.length * 3;
-    const rowsPerPeriod = showTotals ? visiblePlatforms.length + 1 : visiblePlatforms.length;
-    if (rowsPerPeriod === 0) return meta;
-    const periodCount =
-      salesOrdersList.length > 0 ? salesOrdersList.length : forecastSummaryList.length;
-    const numRows = periodCount * rowsPerPeriod;
-    for (let r = 0; r < numRows; r++) {
-      for (let i = 0; i < SUMMARY_COLUMNS.length; i++) {
-        meta.push({
-          row: r,
-          col: summaryStart + i,
-          className: "summary-cell",
-        });
-      }
-    }
-    return meta;
-  }, [months, visiblePlatforms, salesOrdersList, forecastSummaryList, showTotals]);
+  const totalsCellMeta = useMemo(
+    () =>
+      createTotalsCellMeta({
+        periodCount,
+        rowsPerPeriod,
+        monthsLength: months.length,
+        summaryColumnsLength: SUMMARY_COLUMNS.length,
+        showTotals,
+      }),
+    [months.length, periodCount, rowsPerPeriod, showTotals],
+  );
+
+  const summaryCellMeta = useMemo(
+    () =>
+      createSummaryCellMeta({
+        periodCount,
+        rowsPerPeriod,
+        monthsLength: months.length,
+      }),
+    [months.length, periodCount, rowsPerPeriod],
+  );
 
   // Helper to get row metadata (period, platform index, isTotals, valid months)
-  const getRowMetadata = useMemo(() => {
-    const effectivePeriods =
-      salesOrdersList.length > 0
-        ? salesOrdersList
-        : forecastSummaryList.length > 0
-        ? forecastSummaryList.map((fc) => ({
-            uploadDateLabel: fc.uploadDateLabel,
-            months: fc.months,
-            totals: PLATFORM_LABELS.reduce(
-              (acc, platform) => ({
-                ...acc,
-                [platform]: {},
-              }),
-              {} as Record<PlatformKey, Record<string, SalesOrderBucket>>,
-            ),
-          }))
-        : [];
-    
-    const rowsPerPeriod = showTotals ? visiblePlatforms.length + 1 : visiblePlatforms.length;
-    
-    return (row: number) => {
-      const periodIndex = Math.floor(row / rowsPerPeriod);
-      const rowInPeriod = row % rowsPerPeriod;
-      const isTotals = showTotals && rowInPeriod === visiblePlatforms.length;
-      const platformIndex = isTotals ? -1 : rowInPeriod;
-      
-      if (periodIndex >= effectivePeriods.length) {
-        return { periodIndex: -1, platformIndex: -1, isTotals: false, validMonthKeys: new Set<string>() };
-      }
-      
-      const period = effectivePeriods[periodIndex];
-      const validMonthKeys = new Set(period.months.map(m => m.key));
-      
-      return { periodIndex, platformIndex, isTotals, validMonthKeys };
-    };
-  }, [salesOrdersList, visiblePlatforms, showTotals, forecastSummaryList]);
+  const getRowMetadata = useMemo(
+    () =>
+      createRowMetadataGetter({
+        effectivePeriods,
+        rowsPerPeriod,
+        showTotals,
+      }),
+    [effectivePeriods, rowsPerPeriod, showTotals],
+  );
 
-  const cellComments = useMemo(() => {
-    if (salesOrdersList.length === 0) return [];
-    const comments: { row: number; col: number; comment: { value: string } }[] = [];
-
-    salesOrdersList.forEach((salesOrders, periodIndex) => {
-      // Get the valid months for this period (months >= upload month)
-      const periodMonthKeys = new Set(salesOrders.months.map(m => m.key));
-      
-      visiblePlatforms.forEach((platform, platformIndex) => {
-        // Calculate row index accounting for totals rows (if shown)
-        const rowsPerPeriod = showTotals ? visiblePlatforms.length + 1 : visiblePlatforms.length;
-        const rowIndex = periodIndex * rowsPerPeriod + platformIndex;
-        const totals = salesOrders.totals[platform] ?? {};
-        months.forEach((month, monthIndex) => {
-          // Only add comments for months that are valid for this period
-          if (!periodMonthKeys.has(month.key)) return;
-          
-          const bucket = totals[month.key];
-          if (!bucket || bucket.jobNumbers.length === 0) return;
-          const colIndex = 2 + monthIndex * 3;
-          comments.push({
-            row: rowIndex,
-            col: colIndex,
-            comment: {
-              value: bucket.jobNumbers.join("\n"),
-            },
-          });
-        });
-      });
-    });
-
-    return comments;
-  }, [salesOrdersList, visiblePlatforms, months, showTotals]);
+  const cellComments = useMemo(
+    () =>
+      buildCellComments({
+        salesOrdersList,
+        visiblePlatforms,
+        months,
+        showTotals,
+      }),
+    [months, salesOrdersList, showTotals, visiblePlatforms],
+  );
 
   // Numeric renderer with thousand separators
   const numberRenderer = useMemo(() => {
@@ -671,11 +399,7 @@ export default function DemandWaterfallTable({
           {isEditingCosts && (
             <div
               ref={bomEditorPopupRef}
-              className="p-2 rounded-md border border-neutral-300 bg-white shadow-lg"
-              style={{ 
-                minWidth: "280px",
-                zIndex: 1001
-              }}
+              className="absolute right-0 top-full mt-2 min-w-[280px] p-2 rounded-md border border-neutral-300 bg-white shadow-lg z-[1001]"
             >
               <div className="space-y-2">
                 {PLATFORM_OPTIONS.map((p) => (

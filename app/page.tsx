@@ -213,8 +213,7 @@ export default function Home() {
         <h1 className="text-xl md:text-2xl font-semibold">MVS-T Demand Waterfall</h1>
       </header>
       <section className="space-y-3">
-        <div className="flex items-end justify-between gap-3 flex-wrap">
-          <div className="text-xs text-neutral-500">SO = Sales Orders · SS = Safety Stock</div>
+        <div className="flex items-end justify-end gap-3 flex-wrap">
           <UploadControls
             onSalesOrdersUpload={handleSalesOrdersUpload}
             onForecastUpload={handleForecastUpload}

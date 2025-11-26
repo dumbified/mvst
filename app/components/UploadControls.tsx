@@ -2,6 +2,19 @@
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+type UploadKey = "salesOrders" | "forecast";
+
+type UploadFieldConfig = {
+  key: UploadKey;
+  label: string;
+  inputId: string;
+};
+
+const createInitialFilesState = (): Record<UploadKey, File | null> => ({
+  salesOrders: null,
+  forecast: null,
+});
+
 type UploadControlsProps = {
   onSalesOrdersUpload?: (file: File) => void;
   onForecastUpload?: (file: File) => void;
@@ -16,29 +29,24 @@ export default function UploadControls({
   onToggleEditMode,
 }: UploadControlsProps) {
   const [open, setOpen] = useState(false);
-  const [soFile, setSoFile] = useState<File | null>(null);
-  const [fcFile, setFcFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<Record<UploadKey, File | null>>(createInitialFilesState);
   const soInputRef = useRef<HTMLInputElement>(null);
   const fcInputRef = useRef<HTMLInputElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
 
-  const canSave = useMemo(() => !!soFile || !!fcFile, [soFile, fcFile]);
-
-  const handleSelectSo = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
-    setSoFile(file);
-  };
-
-  const handleSelectFc = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
-    setFcFile(file);
-  };
+  const canSave = useMemo(() => Object.values(files).some(Boolean), [files]);
 
   const handleOpen = () => setOpen((prev) => !prev);
+  const handleFileChange = useCallback(
+    (key: UploadKey) => (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0] ?? null;
+      setFiles((prev) => ({ ...prev, [key]: file }));
+    },
+    [],
+  );
 
   const resetSelections = useCallback(() => {
-    setSoFile(null);
-    setFcFile(null);
+    setFiles(createInitialFilesState());
     if (soInputRef.current) soInputRef.current.value = "";
     if (fcInputRef.current) fcInputRef.current.value = "";
   }, []);
@@ -50,17 +58,22 @@ export default function UploadControls({
 
   const handleSave = async () => {
     try {
-      if (soFile && onSalesOrdersUpload) {
-        await onSalesOrdersUpload(soFile);
+      if (files.salesOrders && onSalesOrdersUpload) {
+        await onSalesOrdersUpload(files.salesOrders);
       }
-      if (fcFile && onForecastUpload) {
-        await onForecastUpload(fcFile);
+      if (files.forecast && onForecastUpload) {
+        await onForecastUpload(files.forecast);
       }
     } finally {
       resetSelections();
       setOpen(false);
     }
   };
+
+  const uploadFields: UploadFieldConfig[] = [
+    { key: "salesOrders", label: "Sales Orders (CSV)", inputId: "upload-so" },
+    { key: "forecast", label: "Forecast (CSV)", inputId: "upload-forecast" },
+  ];
 
   useEffect(() => {
     if (!open) return;
@@ -103,52 +116,39 @@ export default function UploadControls({
       {open ? (
         <div className="absolute right-0 top-full mt-2 z-[6000] w-full min-w-[400px] rounded-lg border border-neutral-200 bg-white p-3 shadow-lg">
           <div className="text-sm font-medium text-neutral-800 mb-2">Upload files</div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-sm text-neutral-700">Sales Orders (CSV)</div>
-              <div className="flex items-center gap-2">
-                <input
-                  ref={soInputRef}
-                  id="upload-so"
-                  type="file"
-                  accept=".csv"
-                  className="hidden"
-                  onChange={handleSelectSo}
-                />
-                <label
-                  htmlFor="upload-so"
-                  className="cursor-pointer inline-flex items-center rounded-md border border-neutral-300 px-2.5 py-1 text-sm text-neutral-700 bg-white hover:bg-neutral-50"
-                >
-                  Choose file
-                </label>
-              </div>
-            </div>
-            {soFile ? (
-              <div className="text-xs text-neutral-500 truncate">Selected: {soFile.name}</div>
-            ) : null}
+          <div className="space-y-4">
+            {uploadFields.map((field) => {
+              const isSalesOrders = field.key === "salesOrders";
+              const inputRef = isSalesOrders ? soInputRef : fcInputRef;
+              const file = files[field.key];
 
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <div className="text-sm text-neutral-700">Forecast (CSV)</div>
-              <div className="flex items-center gap-2">
-                <input
-                  ref={fcInputRef}
-                  id="upload-forecast"
-                  type="file"
-                  accept=".csv"
-                  className="hidden"
-                  onChange={handleSelectFc}
-                />
-                <label
-                  htmlFor="upload-forecast"
-                  className="cursor-pointer inline-flex items-center rounded-md border border-neutral-300 px-2.5 py-1 text-sm text-neutral-700 bg-white hover:bg-neutral-50"
-                >
-                  Choose file
-                </label>
-              </div>
-            </div>
-            {fcFile ? (
-              <div className="text-xs text-neutral-500 truncate">Selected: {fcFile.name}</div>
-            ) : null}
+              return (
+                <div key={field.key} className="space-y-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm text-neutral-700">{field.label}</div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={inputRef}
+                        id={field.inputId}
+                        type="file"
+                        accept=".csv"
+                        className="hidden"
+                        onChange={handleFileChange(field.key)}
+                      />
+                      <label
+                        htmlFor={field.inputId}
+                        className="cursor-pointer inline-flex items-center rounded-md border border-neutral-300 px-2.5 py-1 text-sm text-neutral-700 bg-white hover:bg-neutral-50"
+                      >
+                        Choose file
+                      </label>
+                    </div>
+                  </div>
+                  {file ? (
+                    <div className="text-xs text-neutral-500 truncate">Selected: {file.name}</div>
+                  ) : null}
+                </div>
+              );
+            })}
             <div className="mt-3 flex items-center justify-end gap-2">
               <button
                 type="button"
