@@ -1,6 +1,7 @@
 'use client';
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { detectCsvFileType, type CsvFileType } from "../lib/csvValidation";
 
 type UploadKey = "salesOrders" | "forecast";
 
@@ -11,6 +12,11 @@ type UploadFieldConfig = {
 };
 
 const createInitialFilesState = (): Record<UploadKey, File | null> => ({
+  salesOrders: null,
+  forecast: null,
+});
+
+const createInitialWarningsState = (): Record<UploadKey, string | null> => ({
   salesOrders: null,
   forecast: null,
 });
@@ -30,23 +36,64 @@ export default function UploadControls({
 }: UploadControlsProps) {
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<Record<UploadKey, File | null>>(createInitialFilesState);
+  const [warnings, setWarnings] = useState<Record<UploadKey, string | null>>(createInitialWarningsState);
+  const [confirmedFiles, setConfirmedFiles] = useState<Record<UploadKey, boolean>>({
+    salesOrders: false,
+    forecast: false,
+  });
   const soInputRef = useRef<HTMLInputElement>(null);
   const fcInputRef = useRef<HTMLInputElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
 
-  const canSave = useMemo(() => Object.values(files).some(Boolean), [files]);
+  const canSave = useMemo(() => {
+    return Object.entries(files).some(([key, file]) => {
+      if (!file) return false;
+      const warning = warnings[key as UploadKey];
+      if (warning) {
+        return confirmedFiles[key as UploadKey];
+      }
+      return true;
+    });
+  }, [files, warnings, confirmedFiles]);
 
   const handleOpen = () => setOpen((prev) => !prev);
+  
   const handleFileChange = useCallback(
-    (key: UploadKey) => (event: ChangeEvent<HTMLInputElement>) => {
+    (key: UploadKey) => async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0] ?? null;
       setFiles((prev) => ({ ...prev, [key]: file }));
+      setConfirmedFiles((prev) => ({ ...prev, [key]: false }));
+      
+      if (file) {
+        const detectedType = await detectCsvFileType(file);
+        const expectedType: CsvFileType = key === "salesOrders" ? "salesOrders" : "forecast";
+        
+        if (detectedType === "unknown") {
+          setWarnings((prev) => ({
+            ...prev,
+            [key]: "Unable to detect file type. Please ensure this is a valid CSV file.",
+          }));
+        } else if (detectedType !== expectedType) {
+          const wrongTypeName = detectedType === "salesOrders" ? "Sales Orders" : "Forecast";
+          const expectedTypeName = key === "salesOrders" ? "Sales Orders" : "Forecast";
+          setWarnings((prev) => ({
+            ...prev,
+            [key]: `⚠️ This file appears to be a ${wrongTypeName} file, but you're uploading it as ${expectedTypeName}. Please verify the file type.`,
+          }));
+        } else {
+          setWarnings((prev) => ({ ...prev, [key]: null }));
+        }
+      } else {
+        setWarnings((prev) => ({ ...prev, [key]: null }));
+      }
     },
     [],
   );
 
   const resetSelections = useCallback(() => {
     setFiles(createInitialFilesState());
+    setWarnings(createInitialWarningsState());
+    setConfirmedFiles({ salesOrders: false, forecast: false });
     if (soInputRef.current) soInputRef.current.value = "";
     if (fcInputRef.current) fcInputRef.current.value = "";
   }, []);
@@ -121,6 +168,8 @@ export default function UploadControls({
               const isSalesOrders = field.key === "salesOrders";
               const inputRef = isSalesOrders ? soInputRef : fcInputRef;
               const file = files[field.key];
+              const warning = warnings[field.key];
+              const isConfirmed = confirmedFiles[field.key];
 
               return (
                 <div key={field.key} className="space-y-1">
@@ -145,6 +194,41 @@ export default function UploadControls({
                   </div>
                   {file ? (
                     <div className="text-xs text-neutral-500 truncate">Selected: {file.name}</div>
+                  ) : null}
+                  {warning && !isConfirmed ? (
+                    <div className="mt-2 p-2 rounded-md bg-amber-50 border border-amber-200">
+                      <div className="text-xs text-amber-800 mb-2">{warning}</div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmedFiles((prev) => ({ ...prev, [field.key]: true }));
+                          }}
+                          className="text-xs px-2 py-1 rounded bg-amber-600 text-white hover:bg-amber-700"
+                        >
+                          Proceed Anyway
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFiles((prev) => ({ ...prev, [field.key]: null }));
+                            setWarnings((prev) => ({ ...prev, [field.key]: null }));
+                            setConfirmedFiles((prev) => ({ ...prev, [field.key]: false }));
+                            if (inputRef.current) inputRef.current.value = "";
+                          }}
+                          className="text-xs px-2 py-1 rounded border border-amber-300 text-amber-700 bg-white hover:bg-amber-50"
+                        >
+                          Remove File
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {warning && isConfirmed ? (
+                    <div className="mt-2 p-2 rounded-md bg-amber-50 border border-amber-200">
+                      <div className="text-xs text-amber-800">
+                        ⚠️ Warning acknowledged. File will be processed as {field.key === "salesOrders" ? "Sales Orders" : "Forecast"}.
+                      </div>
+                    </div>
                   ) : null}
                 </div>
               );
