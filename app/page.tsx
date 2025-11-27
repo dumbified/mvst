@@ -1,62 +1,64 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import DemandWaterfallTable from "./components/DemandWaterfallTable";
 import UploadControls from "./components/UploadControls";
 import DatePickerDialog from "./components/DatePickerDialog";
-import { SalesOrderSummary, parseSalesOrdersCsv, formatFullDate, formatMonthLabel, monthKeyFromDate } from "./lib/salesOrders";
+import { SalesOrderSummary, parseSalesOrdersCsv, formatFullDate } from "./lib/salesOrders";
 import { ForecastSummary, parseForecastCsv } from "./lib/forecasts";
 import { uploadFileToSupabase } from "./lib/storage";
-
-const MONTH_LOOKUP: Record<string, number> = {
-  Jan: 0,
-  Feb: 1,
-  Mar: 2,
-  Apr: 3,
-  May: 4,
-  Jun: 5,
-  Jul: 6,
-  Aug: 7,
-  Sep: 8,
-  Oct: 9,
-  Nov: 10,
-  Dec: 11,
-};
+import { buildMonthsWindow, parseDateLabel, sortPeriodsByUploadDate } from "./lib/dateUtils";
+import { useMonthFilter } from "./hooks/useMonthFilter";
+import { loadSharedWaterfallState, saveSharedWaterfallState } from "./lib/stateStorage";
 
 export default function Home() {
   const [salesOrdersList, setSalesOrdersList] = useState<SalesOrderSummary[]>([]);
   const [forecastSummaryList, setForecastSummaryList] = useState<ForecastSummary[]>([]);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [editingDateLabel, setEditingDateLabel] = useState<string | null>(null);
   const [editingDate, setEditingDate] = useState<Date | undefined>(undefined);
   const [editingAnchor, setEditingAnchor] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
   const bucketName = "uploads";
 
-  // Load saved data on mount
+  // Load saved data on mount (remote first, fallback to local storage)
   useEffect(() => {
-    try {
-      const soJson = localStorage.getItem("mvst_salesOrdersList");
-      const fcJson = localStorage.getItem("mvst_forecastSummary");
-      if (soJson) {
-        const parsed = JSON.parse(soJson);
-        if (Array.isArray(parsed)) {
-          setSalesOrdersList(parsed);
-        }
+    let cancelled = false;
+    const loadState = async () => {
+      const remote = await loadSharedWaterfallState();
+      if (cancelled) return;
+      if (remote) {
+        setSalesOrdersList(remote.salesOrdersList ?? []);
+        setForecastSummaryList(remote.forecastSummaryList ?? []);
+        return;
       }
-      if (fcJson) {
-        const parsed = JSON.parse(fcJson);
-        // Support both old format (single object) and new format (array)
-        if (Array.isArray(parsed)) {
-          setForecastSummaryList(parsed);
-        } else if (parsed && typeof parsed === "object" && parsed.uploadDateLabel) {
-          // Migrate old single forecast to array format
-          setForecastSummaryList([parsed]);
+      try {
+        const soJson = localStorage.getItem("mvst_salesOrdersList");
+        const fcJson = localStorage.getItem("mvst_forecastSummary");
+        if (soJson) {
+          const parsed = JSON.parse(soJson);
+          if (Array.isArray(parsed)) {
+            setSalesOrdersList(parsed);
+          }
         }
+        if (fcJson) {
+          const parsed = JSON.parse(fcJson);
+          if (Array.isArray(parsed)) {
+            setForecastSummaryList(parsed);
+          } else if (parsed && typeof parsed === "object" && parsed.uploadDateLabel) {
+            setForecastSummaryList([parsed]);
+          }
+        }
+      } catch {
+        // ignore storage errors
       }
-    } catch {
-      // ignore storage errors
-    }
+    };
+    loadState();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Persist data whenever it changes
@@ -76,67 +78,89 @@ export default function Home() {
     }
   }, [forecastSummaryList]);
 
-  const handleSalesOrdersUpload = useCallback(async (file: File) => {
-    try {
-      // Persist original file in Supabase Storage
-      await uploadFileToSupabase(bucketName, file, "sales-orders");
-      const csvText = await file.text();
-      const summary = parseSalesOrdersCsv(csvText, new Date());
-      if (summary) {
-        setSalesOrdersList((prev) => [...prev, summary]);
-      }
-    } catch (error) {
-      console.error("Failed to process Sales Orders CSV", error);
-    }
-  }, []);
+  const {
+    fromMonth,
+    toMonth,
+    setFromMonth,
+    setToMonth,
+    availableMonths,
+    filteredSalesOrdersList,
+    filteredForecastSummaryList,
+    hasActiveMonthFilter,
+    filteredPeriodCount,
+    totalPeriodCount,
+    clearFilters,
+  } = useMonthFilter<SalesOrderSummary, ForecastSummary>(salesOrdersList, forecastSummaryList);
 
-  const handleForecastUpload = useCallback(async (file: File) => {
-    try {
-      // Persist original file in Supabase Storage
-      await uploadFileToSupabase(bucketName, file, "forecasts");
-      const csvText = await file.text();
-      const summary = parseForecastCsv(csvText, new Date());
-      if (summary) {
-        setForecastSummaryList((prev) => [...prev, summary]);
-      }
-    } catch (error) {
-      console.error("Failed to process Forecast CSV", error);
-    }
-  }, []);
-
-  const handleDeleteByDate = useCallback((dateLabel: string) => {
-    setSalesOrdersList((prev) => prev.filter((so) => so.uploadDateLabel !== dateLabel));
-    setForecastSummaryList((prev) => prev.filter((fc) => fc.uploadDateLabel !== dateLabel));
-  }, []);
-
-  const buildMonthsForUploadDate = useCallback((date: Date) => {
-    const startKey = monthKeyFromDate(new Date(date.getFullYear(), date.getMonth(), 1));
-    const months: { key: string; label: string }[] = [];
-    for (let i = 0; i <= 6; i++) {
-      const d = new Date(date.getFullYear(), date.getMonth(), 1);
-      d.setMonth(d.getMonth() + i);
-      const key = monthKeyFromDate(d);
-      months.push({ key, label: formatMonthLabel(key) });
-    }
-    return months;
-  }, []);
-
-  // Parse date from dateLabel string (format: "DD MMM YYYY")
-  const parseDateFromLabel = useCallback(
-    (dateLabel: string): Date | null => {
-      const match = dateLabel.trim().match(/^(\d{2})\s+([A-Za-z]{3})\s+(\d{4})$/);
-      if (!match) return null;
-      const [, dayStr, monthStrRaw, yearStr] = match;
-      const monthStr = monthStrRaw.slice(0, 3);
-      const monthIndex = MONTH_LOOKUP[monthStr as keyof typeof MONTH_LOOKUP];
-      if (monthIndex == null) return null;
-      const day = Number(dayStr);
-      const year = Number(yearStr);
-      const parsed = new Date(year, monthIndex, day);
-      return Number.isNaN(parsed.getTime()) ? null : parsed;
+  const persistSharedState = useCallback(
+    (nextSales: SalesOrderSummary[], nextForecasts: ForecastSummary[]) => {
+      saveSharedWaterfallState({
+        salesOrdersList: nextSales,
+        forecastSummaryList: nextForecasts,
+        updatedAt: new Date().toISOString(),
+      }).catch((err) => console.error("Failed to persist shared state", err));
     },
-    []
+    [],
   );
+
+  const handleSalesOrdersUpload = useCallback(
+    async (file: File) => {
+      try {
+        await uploadFileToSupabase(bucketName, file, "sales-orders");
+        const csvText = await file.text();
+        const summary = parseSalesOrdersCsv(csvText, new Date());
+        if (summary) {
+          const nextSales = sortPeriodsByUploadDate([...salesOrdersList, summary]);
+          setSalesOrdersList(nextSales);
+          persistSharedState(nextSales, forecastSummaryList);
+        }
+      } catch (error) {
+        console.error("Failed to process Sales Orders CSV", error);
+      }
+    },
+    [bucketName, forecastSummaryList, persistSharedState, salesOrdersList],
+  );
+
+  const handleForecastUpload = useCallback(
+    async (file: File) => {
+      try {
+        await uploadFileToSupabase(bucketName, file, "forecasts");
+        const csvText = await file.text();
+        const summary = parseForecastCsv(csvText, new Date());
+        if (summary) {
+          const nextForecasts = sortPeriodsByUploadDate([...forecastSummaryList, summary]);
+          setForecastSummaryList(nextForecasts);
+          persistSharedState(salesOrdersList, nextForecasts);
+        }
+      } catch (error) {
+        console.error("Failed to process Forecast CSV", error);
+      }
+    },
+    [bucketName, forecastSummaryList, persistSharedState, salesOrdersList],
+  );
+
+  const handleDeleteByDate = useCallback(
+    (dateLabel: string) => {
+      const nextSales = salesOrdersList.filter((so) => so.uploadDateLabel !== dateLabel);
+      const nextForecasts = forecastSummaryList.filter((fc) => fc.uploadDateLabel !== dateLabel);
+      setSalesOrdersList(nextSales);
+      setForecastSummaryList(nextForecasts);
+      persistSharedState(nextSales, nextForecasts);
+    },
+    [forecastSummaryList, persistSharedState, salesOrdersList],
+  );
+
+  useEffect(() => {
+    if (!showFilterMenu) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!filterMenuRef.current) return;
+      if (!filterMenuRef.current.contains(event.target as Node)) {
+        setShowFilterMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showFilterMenu]);
 
   const handleDateEdit = useCallback(
     (dateLabel: string, anchor?: { top: number; left: number; width: number; height: number }) => {
@@ -149,7 +173,7 @@ export default function Home() {
       }
 
       // Find the current date from the label
-      const currentDate = parseDateFromLabel(dateLabel);
+      const currentDate = parseDateLabel(dateLabel);
       if (!currentDate) {
         console.error("Could not parse date from label:", dateLabel);
         return;
@@ -161,51 +185,55 @@ export default function Home() {
       setEditingAnchor(anchor ?? null);
       setDatePickerOpen(true);
     },
-    [datePickerOpen, editingDateLabel, parseDateFromLabel]
+    [datePickerOpen, editingDateLabel]
   );
 
   const handleDateDelete = useCallback((dateLabel: string) => {
     handleDeleteByDate(dateLabel);
   }, [handleDeleteByDate]);
 
-  const handleDateSelect = useCallback((newDate: Date) => {
-    if (!editingDateLabel) return;
+  const handleDateSelect = useCallback(
+    (newDate: Date) => {
+      if (!editingDateLabel) return;
 
-    const months = buildMonthsForUploadDate(newDate);
-    const newDateLabel = formatFullDate(newDate);
+      const months = buildMonthsWindow(newDate);
+      const newDateLabel = formatFullDate(newDate);
 
-    // Update forecast if it matches
-    setForecastSummaryList((prev) =>
-      prev.map((fc) =>
-        fc.uploadDateLabel === editingDateLabel
-          ? {
-              ...fc,
-              uploadDateLabel: newDateLabel,
-              months,
-            }
-          : fc
-      )
-    );
+      const nextForecasts = sortPeriodsByUploadDate(
+        forecastSummaryList.map((fc) =>
+          fc.uploadDateLabel === editingDateLabel
+            ? {
+                ...fc,
+                uploadDateLabel: newDateLabel,
+                months,
+              }
+            : fc,
+        ),
+      );
 
-    // Update sales orders if any match
-    setSalesOrdersList((prev) =>
-      prev.map((so) =>
-        so.uploadDateLabel === editingDateLabel
-          ? {
-              ...so,
-              uploadDateLabel: newDateLabel,
-              months,
-            }
-          : so
-      )
-    );
+      const nextSales = sortPeriodsByUploadDate(
+        salesOrdersList.map((so) =>
+          so.uploadDateLabel === editingDateLabel
+            ? {
+                ...so,
+                uploadDateLabel: newDateLabel,
+                months,
+              }
+            : so,
+        ),
+      );
 
-    // Close the dialog
-    setDatePickerOpen(false);
-    setEditingDateLabel(null);
-    setEditingDate(undefined);
-    setEditingAnchor(null);
-  }, [editingDateLabel, buildMonthsForUploadDate]);
+      setForecastSummaryList(nextForecasts);
+      setSalesOrdersList(nextSales);
+      persistSharedState(nextSales, nextForecasts);
+
+      setDatePickerOpen(false);
+      setEditingDateLabel(null);
+      setEditingDate(undefined);
+      setEditingAnchor(null);
+    },
+    [editingDateLabel, forecastSummaryList, persistSharedState, salesOrdersList],
+  );
 
   return (
     <main className="min-h-screen p-6 md:p-10 flex flex-col gap-6 bg-white">
@@ -213,18 +241,79 @@ export default function Home() {
         <h1 className="text-xl md:text-2xl font-semibold">MVS-T Demand Waterfall</h1>
       </header>
       <section className="space-y-3">
-        <div className="flex items-end justify-end gap-3 flex-wrap">
-          <UploadControls
-            onSalesOrdersUpload={handleSalesOrdersUpload}
-            onForecastUpload={handleForecastUpload}
-            editMode={editMode}
-            onToggleEditMode={() => setEditMode((v) => !v)}
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative flex items-center gap-2" ref={filterMenuRef}>
+            <button
+              type="button"
+              onClick={() => setShowFilterMenu((prev) => !prev)}
+              className="inline-flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 bg-white hover:bg-neutral-50 font-mono"
+            >
+              Filter by Month
+            </button>
+            {showFilterMenu ? (
+              <div className="absolute left-0 top-full mt-2 w-64 rounded-lg border border-neutral-200 bg-white p-3 shadow-lg z-[5000]">
+                <div className="flex flex-col gap-3 text-xs text-neutral-700">
+                  <label className="flex flex-col gap-1">
+                    <span>From</span>
+                    <select
+                      value={fromMonth}
+                      onChange={(e) => setFromMonth(e.target.value)}
+                      className="rounded border border-neutral-300 px-2 py-1 text-xs bg-white"
+                    >
+                      <option value="">All months</option>
+                      {availableMonths.map((month) => (
+                        <option key={month.key} value={month.key}>
+                          {month.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span>To</span>
+                    <select
+                      value={toMonth}
+                      onChange={(e) => setToMonth(e.target.value)}
+                      className="rounded border border-neutral-300 px-2 py-1 text-xs bg-white"
+                    >
+                      <option value="">All months</option>
+                      {availableMonths.map((month) => (
+                        <option key={month.key} value={month.key}>
+                          {month.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-neutral-500">
+                      {hasActiveMonthFilter
+                        ? `Showing ${filteredPeriodCount} period${filteredPeriodCount === 1 ? "" : "s"}`
+                        : `Showing all ${totalPeriodCount} period${totalPeriodCount === 1 ? "" : "s"}`}
+                    </span>
+                    <button
+                      type="button"
+                      className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
+                      onClick={clearFilters}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <div className="ml-auto flex items-end justify-end gap-3 flex-wrap">
+            <UploadControls
+              onSalesOrdersUpload={handleSalesOrdersUpload}
+              onForecastUpload={handleForecastUpload}
+              editMode={editMode}
+              onToggleEditMode={() => setEditMode((v) => !v)}
+            />
+          </div>
         </div>
         <div className="overflow-auto rounded-lg border border-neutral-200/60 bg-white">
           <DemandWaterfallTable
-            salesOrdersList={salesOrdersList}
-            forecastSummaryList={forecastSummaryList}
+            salesOrdersList={filteredSalesOrdersList}
+            forecastSummaryList={filteredForecastSummaryList}
             editMode={editMode}
             onDateEdit={handleDateEdit}
             onDateDelete={handleDateDelete}
