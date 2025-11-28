@@ -23,36 +23,78 @@ export default function Home() {
   const filterMenuRef = useRef<HTMLDivElement>(null);
   const bucketName = "uploads";
 
-  // Load saved data on mount (remote first, fallback to local storage)
+  // Load saved data on mount (merge remote and local, prefer most complete)
   useEffect(() => {
     let cancelled = false;
     const loadState = async () => {
-      const remote = await loadSharedWaterfallState();
-      if (cancelled) return;
-      if (remote) {
-        setSalesOrdersList(remote.salesOrdersList ?? []);
-        setForecastSummaryList(remote.forecastSummaryList ?? []);
-        return;
-      }
+      // Load local storage first (faster, more reliable)
+      let localSales: SalesOrderSummary[] = [];
+      let localForecasts: ForecastSummary[] = [];
+      
       try {
         const soJson = localStorage.getItem("mvst_salesOrdersList");
         const fcJson = localStorage.getItem("mvst_forecastSummary");
         if (soJson) {
           const parsed = JSON.parse(soJson);
           if (Array.isArray(parsed)) {
-            setSalesOrdersList(parsed);
+            localSales = parsed;
           }
         }
         if (fcJson) {
           const parsed = JSON.parse(fcJson);
           if (Array.isArray(parsed)) {
-            setForecastSummaryList(parsed);
+            localForecasts = parsed;
           } else if (parsed && typeof parsed === "object" && parsed.uploadDateLabel) {
-            setForecastSummaryList([parsed]);
+            localForecasts = [parsed];
           }
         }
       } catch {
         // ignore storage errors
+      }
+
+      // Try to load remote state
+      const remote = await loadSharedWaterfallState();
+      if (cancelled) return;
+
+      // Merge remote and local data, deduplicating by uploadDateLabel
+      const mergeLists = <T extends { uploadDateLabel: string }>(
+        local: T[],
+        remote: T[] | undefined
+      ): T[] => {
+        if (!remote || remote.length === 0) return local;
+        
+        // Create a map of local items by uploadDateLabel
+        const localMap = new Map<string, T>();
+        local.forEach((item) => {
+          localMap.set(item.uploadDateLabel, item);
+        });
+        
+        // Add remote items, preferring remote if both exist (it's more recent)
+        remote.forEach((item) => {
+          localMap.set(item.uploadDateLabel, item);
+        });
+        
+        // Convert back to array and sort
+        return Array.from(localMap.values());
+      };
+
+      const mergedSales = mergeLists(localSales, remote?.salesOrdersList);
+      const mergedForecasts = mergeLists(localForecasts, remote?.forecastSummaryList);
+
+      // Sort by upload date
+      const sortedSales = sortPeriodsByUploadDate(mergedSales);
+      const sortedForecasts = sortPeriodsByUploadDate(mergedForecasts);
+
+      setSalesOrdersList(sortedSales);
+      setForecastSummaryList(sortedForecasts);
+
+      // If we merged data and it's different from what we loaded, save it back
+      if (remote && (mergedSales.length !== localSales.length || mergedForecasts.length !== localForecasts.length)) {
+        saveSharedWaterfallState({
+          salesOrdersList: sortedSales,
+          forecastSummaryList: sortedForecasts,
+          updatedAt: new Date().toISOString(),
+        });
       }
     };
     loadState();
@@ -93,12 +135,13 @@ export default function Home() {
   } = useMonthFilter<SalesOrderSummary, ForecastSummary>(salesOrdersList, forecastSummaryList);
 
   const persistSharedState = useCallback(
-    (nextSales: SalesOrderSummary[], nextForecasts: ForecastSummary[]) => {
-      saveSharedWaterfallState({
+    async (nextSales: SalesOrderSummary[], nextForecasts: ForecastSummary[]) => {
+      await saveSharedWaterfallState({
         salesOrdersList: nextSales,
         forecastSummaryList: nextForecasts,
         updatedAt: new Date().toISOString(),
-      }).catch((err) => console.error("Failed to persist shared state", err));
+      });
+      // Errors are already handled in saveSharedWaterfallState
     },
     [],
   );
