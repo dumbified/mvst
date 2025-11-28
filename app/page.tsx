@@ -536,6 +536,9 @@ export default function Home() {
         onDateSelect={handleDateSelect}
         anchor={editingAnchor ?? undefined}
       />
+      <p className="text-[11px] text-neutral-500 text-center mt-6">
+        Changes may take a short time to sync across devices; refresh after some times if you don’t see the latest updates.
+      </p>
     </main>
   );
 }
