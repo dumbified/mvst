@@ -10,6 +10,7 @@ const STATE_PATH = "shared/waterfall-state.json";
 export type SharedWaterfallState = {
   salesOrdersList: SalesOrderSummary[];
   forecastSummaryList: ForecastSummary[];
+  bomCosts?: Record<string, number>;
   updatedAt: string;
 };
 

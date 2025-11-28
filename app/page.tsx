@@ -4,16 +4,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import DemandWaterfallTable from "./components/DemandWaterfallTable";
 import UploadControls from "./components/UploadControls";
 import DatePickerDialog from "./components/DatePickerDialog";
-import { SalesOrderSummary, parseSalesOrdersCsv, formatFullDate } from "./lib/salesOrders";
+import { SalesOrderSummary, parseSalesOrdersCsv } from "./lib/salesOrders";
 import { ForecastSummary, parseForecastCsv } from "./lib/forecasts";
 import { uploadFileToSupabase } from "./lib/storage";
-import { buildMonthsWindow, parseDateLabel, sortPeriodsByUploadDate } from "./lib/dateUtils";
+import { parseDateLabel, sortPeriodsByUploadDate } from "./lib/dateUtils";
+import { updatePeriodDates } from "./lib/periodUtils";
 import { useMonthFilter } from "./hooks/useMonthFilter";
-import { loadSharedWaterfallState, saveSharedWaterfallState } from "./lib/stateStorage";
+import { useWaterfallState } from "./hooks/useWaterfallState";
+import { useClickOutside } from "./hooks/useClickOutside";
 
 export default function Home() {
-  const [salesOrdersList, setSalesOrdersList] = useState<SalesOrderSummary[]>([]);
-  const [forecastSummaryList, setForecastSummaryList] = useState<ForecastSummary[]>([]);
+  const {
+    salesOrdersList,
+    forecastSummaryList,
+    bomCosts,
+    setSalesOrdersList,
+    setForecastSummaryList,
+    setBomCosts,
+    persistSharedState,
+  } = useWaterfallState();
+
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -22,103 +32,6 @@ export default function Home() {
   const [editingAnchor, setEditingAnchor] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
   const bucketName = "uploads";
-
-  // Load saved data on mount (merge remote and local, prefer most complete)
-  useEffect(() => {
-    let cancelled = false;
-    const loadState = async () => {
-      // Load local storage first (faster, more reliable)
-      let localSales: SalesOrderSummary[] = [];
-      let localForecasts: ForecastSummary[] = [];
-      
-      try {
-        const soJson = localStorage.getItem("mvst_salesOrdersList");
-        const fcJson = localStorage.getItem("mvst_forecastSummary");
-        if (soJson) {
-          const parsed = JSON.parse(soJson);
-          if (Array.isArray(parsed)) {
-            localSales = parsed;
-          }
-        }
-        if (fcJson) {
-          const parsed = JSON.parse(fcJson);
-          if (Array.isArray(parsed)) {
-            localForecasts = parsed;
-          } else if (parsed && typeof parsed === "object" && parsed.uploadDateLabel) {
-            localForecasts = [parsed];
-          }
-        }
-      } catch {
-        // ignore storage errors
-      }
-
-      // Try to load remote state
-      const remote = await loadSharedWaterfallState();
-      if (cancelled) return;
-
-      // Merge remote and local data, deduplicating by uploadDateLabel
-      const mergeLists = <T extends { uploadDateLabel: string }>(
-        local: T[],
-        remote: T[] | undefined
-      ): T[] => {
-        if (!remote || remote.length === 0) return local;
-        
-        // Create a map of local items by uploadDateLabel
-        const localMap = new Map<string, T>();
-        local.forEach((item) => {
-          localMap.set(item.uploadDateLabel, item);
-        });
-        
-        // Add remote items, preferring remote if both exist (it's more recent)
-        remote.forEach((item) => {
-          localMap.set(item.uploadDateLabel, item);
-        });
-        
-        // Convert back to array and sort
-        return Array.from(localMap.values());
-      };
-
-      const mergedSales = mergeLists(localSales, remote?.salesOrdersList);
-      const mergedForecasts = mergeLists(localForecasts, remote?.forecastSummaryList);
-
-      // Sort by upload date
-      const sortedSales = sortPeriodsByUploadDate(mergedSales);
-      const sortedForecasts = sortPeriodsByUploadDate(mergedForecasts);
-
-      setSalesOrdersList(sortedSales);
-      setForecastSummaryList(sortedForecasts);
-
-      // If we merged data and it's different from what we loaded, save it back
-      if (remote && (mergedSales.length !== localSales.length || mergedForecasts.length !== localForecasts.length)) {
-        saveSharedWaterfallState({
-          salesOrdersList: sortedSales,
-          forecastSummaryList: sortedForecasts,
-          updatedAt: new Date().toISOString(),
-        });
-      }
-    };
-    loadState();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Persist data whenever it changes
-  useEffect(() => {
-    try {
-      localStorage.setItem("mvst_salesOrdersList", JSON.stringify(salesOrdersList));
-    } catch {
-      // ignore
-    }
-  }, [salesOrdersList]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("mvst_forecastSummary", JSON.stringify(forecastSummaryList));
-    } catch {
-      // ignore
-    }
-  }, [forecastSummaryList]);
 
   const {
     fromMonth,
@@ -134,16 +47,12 @@ export default function Home() {
     clearFilters,
   } = useMonthFilter<SalesOrderSummary, ForecastSummary>(salesOrdersList, forecastSummaryList);
 
-  const persistSharedState = useCallback(
-    async (nextSales: SalesOrderSummary[], nextForecasts: ForecastSummary[]) => {
-      await saveSharedWaterfallState({
-        salesOrdersList: nextSales,
-        forecastSummaryList: nextForecasts,
-        updatedAt: new Date().toISOString(),
-      });
-      // Errors are already handled in saveSharedWaterfallState
+  const handleBomCostsChange = useCallback(
+    async (newBomCosts: Record<string, number>) => {
+      setBomCosts(newBomCosts);
+      await persistSharedState(salesOrdersList, forecastSummaryList, newBomCosts);
     },
-    [],
+    [salesOrdersList, forecastSummaryList, persistSharedState],
   );
 
   const handleSalesOrdersUpload = useCallback(
@@ -155,7 +64,7 @@ export default function Home() {
         if (summary) {
           const nextSales = sortPeriodsByUploadDate([...salesOrdersList, summary]);
           setSalesOrdersList(nextSales);
-          persistSharedState(nextSales, forecastSummaryList);
+          await persistSharedState(nextSales, forecastSummaryList, bomCosts);
         }
       } catch (error) {
         console.error("Failed to process Sales Orders CSV", error);
@@ -173,7 +82,7 @@ export default function Home() {
         if (summary) {
           const nextForecasts = sortPeriodsByUploadDate([...forecastSummaryList, summary]);
           setForecastSummaryList(nextForecasts);
-          persistSharedState(salesOrdersList, nextForecasts);
+          await persistSharedState(salesOrdersList, nextForecasts, bomCosts);
         }
       } catch (error) {
         console.error("Failed to process Forecast CSV", error);
@@ -183,27 +92,17 @@ export default function Home() {
   );
 
   const handleDeleteByDate = useCallback(
-    (dateLabel: string) => {
+    async (dateLabel: string) => {
       const nextSales = salesOrdersList.filter((so) => so.uploadDateLabel !== dateLabel);
       const nextForecasts = forecastSummaryList.filter((fc) => fc.uploadDateLabel !== dateLabel);
       setSalesOrdersList(nextSales);
       setForecastSummaryList(nextForecasts);
-      persistSharedState(nextSales, nextForecasts);
+      await persistSharedState(nextSales, nextForecasts, bomCosts);
     },
-    [forecastSummaryList, persistSharedState, salesOrdersList],
+    [bomCosts, forecastSummaryList, persistSharedState, salesOrdersList],
   );
 
-  useEffect(() => {
-    if (!showFilterMenu) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (!filterMenuRef.current) return;
-      if (!filterMenuRef.current.contains(event.target as Node)) {
-        setShowFilterMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showFilterMenu]);
+  useClickOutside(filterMenuRef, () => setShowFilterMenu(false), showFilterMenu);
 
   const handleDateEdit = useCallback(
     (dateLabel: string, anchor?: { top: number; left: number; width: number; height: number }) => {
@@ -236,46 +135,31 @@ export default function Home() {
   }, [handleDeleteByDate]);
 
   const handleDateSelect = useCallback(
-    (newDate: Date) => {
+    async (newDate: Date) => {
       if (!editingDateLabel) return;
 
-      const months = buildMonthsWindow(newDate);
-      const newDateLabel = formatFullDate(newDate);
-
-      const nextForecasts = sortPeriodsByUploadDate(
-        forecastSummaryList.map((fc) =>
-          fc.uploadDateLabel === editingDateLabel
-            ? {
-                ...fc,
-                uploadDateLabel: newDateLabel,
-                months,
-              }
-            : fc,
-        ),
+      const { salesOrders, forecasts } = updatePeriodDates(
+        salesOrdersList,
+        forecastSummaryList,
+        editingDateLabel,
+        newDate,
       );
 
-      const nextSales = sortPeriodsByUploadDate(
-        salesOrdersList.map((so) =>
-          so.uploadDateLabel === editingDateLabel
-            ? {
-                ...so,
-                uploadDateLabel: newDateLabel,
-                months,
-              }
-            : so,
-        ),
-      );
+      const nextSales = sortPeriodsByUploadDate(salesOrders);
+      const nextForecasts = sortPeriodsByUploadDate(forecasts);
 
       setForecastSummaryList(nextForecasts);
       setSalesOrdersList(nextSales);
-      persistSharedState(nextSales, nextForecasts);
+
+      // Ensure shared state is persisted with updated dates
+      await persistSharedState(nextSales, nextForecasts, bomCosts);
 
       setDatePickerOpen(false);
       setEditingDateLabel(null);
       setEditingDate(undefined);
       setEditingAnchor(null);
     },
-    [editingDateLabel, forecastSummaryList, persistSharedState, salesOrdersList],
+    [bomCosts, editingDateLabel, forecastSummaryList, persistSharedState, salesOrdersList],
   );
 
   return (
@@ -357,6 +241,8 @@ export default function Home() {
           <DemandWaterfallTable
             salesOrdersList={filteredSalesOrdersList}
             forecastSummaryList={filteredForecastSummaryList}
+            bomCosts={bomCosts}
+            onBomCostsChange={handleBomCostsChange}
             editMode={editMode}
             onDateEdit={handleDateEdit}
             onDateDelete={handleDateDelete}
