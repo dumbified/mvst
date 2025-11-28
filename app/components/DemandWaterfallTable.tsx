@@ -10,6 +10,7 @@ import 'handsontable/styles/ht-theme-main.min.css';
 import { registerAllModules } from 'handsontable/registry';
 import { PLATFORM_LABELS, PlatformKey, SalesOrderSummary } from "../lib/salesOrders";
 import { ForecastSummary } from "../lib/forecasts";
+import { DEFAULT_BOM_COSTS } from "../lib/constants";
 import { textRenderer } from "handsontable/renderers/textRenderer";
 import {
   MonthColumn,
@@ -31,20 +32,17 @@ const PLATFORM_OPTIONS: PlatformKey[] = [...PLATFORM_LABELS];
 
 const TABLE_FONT_SIZE_PX = 10;
 
-const DEFAULT_BOM_COSTS: Record<string, number> = {
-  TH3K: 583382,
-  TR3K: 834063,
-  THSE: 306667,
-  "TRS+": 390193,
-};
-
 type DateAnchor = { top: number; left: number; width: number; height: number };
 
 type DemandWaterfallTableProps = {
   salesOrdersList?: SalesOrderSummary[];
   forecastSummaryList?: ForecastSummary[];
   bomCosts?: Record<string, number>;
+<<<<<<< HEAD
   onBomCostsChange?: (bomCosts: Record<string, number>) => void;
+=======
+  onBomCostsChange?: (costs: Record<string, number>) => void;
+>>>>>>> b8578500210b092506a8649f796cc054a0f64e64
   editMode?: boolean;
   onDateEdit?: (dateLabel: string, anchor?: DateAnchor) => void;
   onDateDelete?: (dateLabel: string) => void;
@@ -53,7 +51,11 @@ type DemandWaterfallTableProps = {
 export default function DemandWaterfallTable({
   salesOrdersList = [],
   forecastSummaryList = [],
+<<<<<<< HEAD
   bomCosts: propBomCosts,
+=======
+  bomCosts = DEFAULT_BOM_COSTS,
+>>>>>>> b8578500210b092506a8649f796cc054a0f64e64
   onBomCostsChange,
   editMode = false,
   onDateEdit,
@@ -65,11 +67,18 @@ export default function DemandWaterfallTable({
   const getHotInstance = () => hotTableRef.current?.hotInstance as Handsontable | undefined;
   const bomEditorButtonRef = useRef<HTMLButtonElement>(null);
   const bomEditorPopupRef = useRef<HTMLDivElement>(null);
+<<<<<<< HEAD
   const resolvedBomCosts = propBomCosts ?? DEFAULT_BOM_COSTS;
   const [isEditingCosts, setIsEditingCosts] = useState(false);
   const [editingCosts, setEditingCosts] = useState<Record<string, string>>(() => {
     const obj: Record<string, string> = {};
     PLATFORM_OPTIONS.forEach((p) => (obj[p] = String(resolvedBomCosts[p] ?? 0)));
+=======
+  const [isEditingCosts, setIsEditingCosts] = useState(false);
+  const [editingCosts, setEditingCosts] = useState<Record<string, string>>(() => {
+    const obj: Record<string, string> = {};
+    PLATFORM_OPTIONS.forEach((p) => (obj[p] = String(bomCosts[p] ?? DEFAULT_BOM_COSTS[p] ?? 0)));
+>>>>>>> b8578500210b092506a8649f796cc054a0f64e64
     return obj;
   });
 
@@ -84,16 +93,30 @@ export default function DemandWaterfallTable({
     [selectedPlatforms]
   );
 
+<<<<<<< HEAD
+=======
+  // Update editing costs when bomCosts prop changes
+  useEffect(() => {
+    const asStrings: Record<string, string> = {};
+    PLATFORM_OPTIONS.forEach((p) => (asStrings[p] = String(bomCosts[p] ?? DEFAULT_BOM_COSTS[p] ?? 0)));
+    setEditingCosts(asStrings);
+  }, [bomCosts]);
+
+>>>>>>> b8578500210b092506a8649f796cc054a0f64e64
   const saveBomCosts = () => {
     const next: Record<string, number> = {};
     PLATFORM_OPTIONS.forEach((p) => {
       const v = Number(String(editingCosts[p] ?? "").replace(/,/g, ""));
       next[p] = Number.isFinite(v) ? v : 0;
     });
+<<<<<<< HEAD
     // Call the parent callback to sync to remote storage
     if (onBomCostsChange) {
       onBomCostsChange(next);
     }
+=======
+    onBomCostsChange?.(next);
+>>>>>>> b8578500210b092506a8649f796cc054a0f64e64
     setIsEditingCosts(false);
   };
 
