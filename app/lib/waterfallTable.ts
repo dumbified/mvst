@@ -27,6 +27,27 @@ export type RowMetadata = {
   validMonthKeys: Set<string>;
 };
 
+type HeaderCell = string | {
+  label: string;
+  colspan?: number;
+  className?: string;
+};
+
+type NestedHeaders = HeaderCell[][];
+
+type MergeCellSetting = {
+  row: number;
+  col: number;
+  rowspan: number;
+  colspan: number;
+};
+
+type CellMetaClass = {
+  row: number;
+  col: number;
+  className: string;
+};
+
 export function computeMonths(
   salesOrdersList: SalesOrderSummary[],
   forecastSummaryList: ForecastSummary[],
@@ -216,15 +237,15 @@ export function buildDataRows({
   return rows;
 }
 
-export function createNestedHeaders(months: MonthColumn[]) {
-  const topRow: any[] = [
+export function createNestedHeaders(months: MonthColumn[]): NestedHeaders {
+  const topRow: HeaderCell[] = [
     { label: "Fcast Load in Date", colspan: 1 },
     { label: "Platform", colspan: 1 },
     ...months.map((month) => ({ label: month.label, colspan: 3 })),
     { label: "Summary", colspan: SUMMARY_COLUMNS.length, className: "summary-header" },
   ];
 
-  const secondRow: any[] = [
+  const secondRow: HeaderCell[] = [
     "",
     "",
     ...months.flatMap(() => ["SO", "Forecast", "SS"]),
@@ -240,12 +261,12 @@ export function createColumnWidths(months: MonthColumn[]) {
   return widths;
 }
 
-export function createMergeCells(periodCount: number, rowsPerPeriod: number) {
+export function createMergeCells(periodCount: number, rowsPerPeriod: number): MergeCellSetting[] {
   if (rowsPerPeriod <= 1 || periodCount === 0) {
     return [];
   }
 
-  const merges: any[] = [];
+  const merges: MergeCellSetting[] = [];
   for (let periodIndex = 0; periodIndex < periodCount; periodIndex++) {
     const startRow = periodIndex * rowsPerPeriod;
     merges.push({
@@ -273,10 +294,10 @@ export function createTotalsCellMeta({
   monthsLength,
   summaryColumnsLength,
   showTotals,
-}: TotalsCellMetaArgs) {
+}: TotalsCellMetaArgs): CellMetaClass[] {
   if (!showTotals || rowsPerPeriod === 0 || periodCount === 0) return [];
   const totalCols = 2 + monthsLength * 3 + summaryColumnsLength;
-  const cells: any[] = [];
+  const cells: CellMetaClass[] = [];
 
   for (let periodIndex = 0; periodIndex < periodCount; periodIndex++) {
     const totalsRowIndex = periodIndex * rowsPerPeriod + (rowsPerPeriod - 1);
@@ -303,9 +324,9 @@ export function createSummaryCellMeta({
   periodCount,
   rowsPerPeriod,
   monthsLength,
-}: SummaryCellMetaArgs) {
+}: SummaryCellMetaArgs): CellMetaClass[] {
   if (rowsPerPeriod === 0 || periodCount === 0) return [];
-  const meta: any[] = [];
+  const meta: CellMetaClass[] = [];
   const summaryStart = 2 + monthsLength * 3;
   const numRows = periodCount * rowsPerPeriod;
 
