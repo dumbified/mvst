@@ -11,9 +11,17 @@ import { buildMonthsWindow, parseDateLabel, sortPeriodsByUploadDate } from "./li
 import { useMonthFilter } from "./hooks/useMonthFilter";
 import { loadSharedWaterfallState, saveSharedWaterfallState } from "./lib/stateStorage";
 
+const DEFAULT_BOM_COSTS: Record<string, number> = {
+  TH3K: 583382,
+  TR3K: 834063,
+  THSE: 306667,
+  "TRS+": 390193,
+};
+
 export default function Home() {
   const [salesOrdersList, setSalesOrdersList] = useState<SalesOrderSummary[]>([]);
   const [forecastSummaryList, setForecastSummaryList] = useState<ForecastSummary[]>([]);
+  const [bomCosts, setBomCosts] = useState<Record<string, number>>(DEFAULT_BOM_COSTS);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -30,10 +38,12 @@ export default function Home() {
       // Load local storage first (faster, more reliable)
       let localSales: SalesOrderSummary[] = [];
       let localForecasts: ForecastSummary[] = [];
+      let localBomCosts: Record<string, number> | null = null;
       
       try {
         const soJson = localStorage.getItem("mvst_salesOrdersList");
         const fcJson = localStorage.getItem("mvst_forecastSummary");
+        const bomJson = localStorage.getItem("mvst_bom_costs");
         if (soJson) {
           const parsed = JSON.parse(soJson);
           if (Array.isArray(parsed)) {
@@ -48,6 +58,12 @@ export default function Home() {
             localForecasts = [parsed];
           }
         }
+        if (bomJson) {
+          const parsed = JSON.parse(bomJson);
+          if (parsed && typeof parsed === "object") {
+            localBomCosts = parsed;
+          }
+        }
       } catch {
         // ignore storage errors
       }
@@ -57,29 +73,64 @@ export default function Home() {
       if (cancelled) return;
 
       // Merge remote and local data, deduplicating by uploadDateLabel
+      // Prefer remote data if it exists and has a valid updatedAt timestamp
       const mergeLists = <T extends { uploadDateLabel: string }>(
         local: T[],
-        remote: T[] | undefined
+        remote: T[] | undefined,
+        remoteUpdatedAt?: string
       ): T[] => {
         if (!remote || remote.length === 0) return local;
         
-        // Create a map of local items by uploadDateLabel
-        const localMap = new Map<string, T>();
-        local.forEach((item) => {
-          localMap.set(item.uploadDateLabel, item);
-        });
+        // Get local storage timestamp for comparison
+        let localUpdatedAt: string | null = null;
+        try {
+          const stateJson = localStorage.getItem("mvst_state_updatedAt");
+          if (stateJson) {
+            localUpdatedAt = JSON.parse(stateJson);
+          }
+        } catch {
+          // ignore
+        }
         
-        // Add remote items, preferring remote if both exist (it's more recent)
-        remote.forEach((item) => {
-          localMap.set(item.uploadDateLabel, item);
-        });
+      // Prefer remote if it has a newer timestamp, otherwise prefer local
+        const preferRemote = remoteUpdatedAt && (!localUpdatedAt || remoteUpdatedAt > localUpdatedAt);
         
-        // Convert back to array and sort
-        return Array.from(localMap.values());
+        if (preferRemote) {
+          // If remote is newer, use ONLY remote data (don't merge in stale local data)
+          // This ensures deletions and updates in remote are respected
+          return [...remote];
+        } else {
+        // If local is newer or equal, trust local entirely (remote may contain stale data)
+        return [...local];
+        }
       };
 
-      const mergedSales = mergeLists(localSales, remote?.salesOrdersList);
-      const mergedForecasts = mergeLists(localForecasts, remote?.forecastSummaryList);
+      const mergedSales = mergeLists(localSales, remote?.salesOrdersList, remote?.updatedAt);
+      const mergedForecasts = mergeLists(localForecasts, remote?.forecastSummaryList, remote?.updatedAt);
+
+      // Merge BOM costs (prefer newer timestamp)
+      let mergedBomCosts: Record<string, number> = { ...DEFAULT_BOM_COSTS };
+      if (localBomCosts) {
+        mergedBomCosts = { ...mergedBomCosts, ...localBomCosts };
+      }
+      if (remote?.bomCosts) {
+        // Get local storage timestamp for comparison
+        let localUpdatedAt: string | null = null;
+        try {
+          const stateJson = localStorage.getItem("mvst_state_updatedAt");
+          if (stateJson) {
+            localUpdatedAt = JSON.parse(stateJson);
+          }
+        } catch {
+          // ignore
+        }
+        // Prefer remote if it has a newer timestamp
+        const preferRemote = remote.updatedAt && (!localUpdatedAt || remote.updatedAt > localUpdatedAt);
+        if (preferRemote) {
+          mergedBomCosts = { ...DEFAULT_BOM_COSTS, ...remote.bomCosts };
+        }
+        // If local is newer, keep mergedBomCosts as-is (remote may be stale)
+      }
 
       // Sort by upload date
       const sortedSales = sortPeriodsByUploadDate(mergedSales);
@@ -87,12 +138,14 @@ export default function Home() {
 
       setSalesOrdersList(sortedSales);
       setForecastSummaryList(sortedForecasts);
+      setBomCosts(mergedBomCosts);
 
       // If we merged data and it's different from what we loaded, save it back
-      if (remote && (mergedSales.length !== localSales.length || mergedForecasts.length !== localForecasts.length)) {
+      if (remote && (mergedSales.length !== localSales.length || mergedForecasts.length !== localForecasts.length || JSON.stringify(mergedBomCosts) !== JSON.stringify(localBomCosts || DEFAULT_BOM_COSTS))) {
         saveSharedWaterfallState({
           salesOrdersList: sortedSales,
           forecastSummaryList: sortedForecasts,
+          bomCosts: mergedBomCosts,
           updatedAt: new Date().toISOString(),
         });
       }
@@ -135,15 +188,21 @@ export default function Home() {
   } = useMonthFilter<SalesOrderSummary, ForecastSummary>(salesOrdersList, forecastSummaryList);
 
   const persistSharedState = useCallback(
-    async (nextSales: SalesOrderSummary[], nextForecasts: ForecastSummary[]) => {
+    async (nextSales: SalesOrderSummary[], nextForecasts: ForecastSummary[], nextBomCosts?: Record<string, number>) => {
+      const updatedAt = new Date().toISOString();
+      try {
+        localStorage.setItem("mvst_state_updatedAt", JSON.stringify(updatedAt));
+      } catch {
+        // ignore
+      }
       await saveSharedWaterfallState({
         salesOrdersList: nextSales,
         forecastSummaryList: nextForecasts,
-        updatedAt: new Date().toISOString(),
+        bomCosts: nextBomCosts || bomCosts,
+        updatedAt,
       });
-      // Errors are already handled in saveSharedWaterfallState
     },
-    [],
+    [bomCosts],
   );
 
   const handleSalesOrdersUpload = useCallback(
@@ -182,15 +241,73 @@ export default function Home() {
     [bucketName, forecastSummaryList, persistSharedState, salesOrdersList],
   );
 
+  const handleBomCostsChange = useCallback(
+    async (newBomCosts: Record<string, number>) => {
+      setBomCosts(newBomCosts);
+      const updatedAt = new Date().toISOString();
+
+      // Update localStorage immediately
+      try {
+        localStorage.setItem("mvst_bom_costs", JSON.stringify(newBomCosts));
+        localStorage.setItem("mvst_state_updatedAt", JSON.stringify(updatedAt));
+      } catch {
+        // ignore
+      }
+      
+      // Save to remote storage with updated timestamp
+      const saved = await saveSharedWaterfallState({
+        salesOrdersList,
+        forecastSummaryList,
+        bomCosts: newBomCosts,
+        updatedAt,
+      });
+      
+      // Save timestamp to localStorage for merge comparison
+      if (saved) {
+        try {
+          localStorage.setItem("mvst_state_updatedAt", JSON.stringify(updatedAt));
+        } catch {
+          // ignore
+        }
+      }
+    },
+    [forecastSummaryList, salesOrdersList],
+  );
+
   const handleDeleteByDate = useCallback(
-    (dateLabel: string) => {
+    async (dateLabel: string) => {
       const nextSales = salesOrdersList.filter((so) => so.uploadDateLabel !== dateLabel);
       const nextForecasts = forecastSummaryList.filter((fc) => fc.uploadDateLabel !== dateLabel);
+      
+      // Update state immediately
       setSalesOrdersList(nextSales);
       setForecastSummaryList(nextForecasts);
-      persistSharedState(nextSales, nextForecasts);
+      const updatedAt = new Date().toISOString();
+      
+      // Update localStorage immediately to prevent stale data on reload
+      try {
+        localStorage.setItem("mvst_salesOrdersList", JSON.stringify(nextSales));
+        localStorage.setItem("mvst_forecastSummary", JSON.stringify(nextForecasts));
+        localStorage.setItem("mvst_state_updatedAt", JSON.stringify(updatedAt));
+      } catch {
+        // ignore
+      }
+      
+      // Save to remote storage with updated timestamp
+      const saved = await saveSharedWaterfallState({
+        salesOrdersList: nextSales,
+        forecastSummaryList: nextForecasts,
+        bomCosts,
+        updatedAt,
+      });
+      
+      // Save timestamp to localStorage for merge comparison
+      if (!saved) {
+        // If remote save failed, log error but keep local state
+        console.error("Failed to save deleted state to remote storage");
+      }
     },
-    [forecastSummaryList, persistSharedState, salesOrdersList],
+    [bomCosts, forecastSummaryList, salesOrdersList],
   );
 
   useEffect(() => {
@@ -242,40 +359,79 @@ export default function Home() {
       const months = buildMonthsWindow(newDate);
       const newDateLabel = formatFullDate(newDate);
 
+      // If the new date is the same as the old date, do nothing
+      if (newDateLabel === editingDateLabel) {
+        setDatePickerOpen(false);
+        setEditingDateLabel(null);
+        setEditingDate(undefined);
+        setEditingAnchor(null);
+        return;
+      }
+
+      // Update forecasts: change the date label and remove any existing record with the new date
       const nextForecasts = sortPeriodsByUploadDate(
-        forecastSummaryList.map((fc) =>
-          fc.uploadDateLabel === editingDateLabel
-            ? {
-                ...fc,
-                uploadDateLabel: newDateLabel,
-                months,
-              }
-            : fc,
-        ),
+        forecastSummaryList
+          .filter((fc) => fc.uploadDateLabel !== newDateLabel) // Remove any existing record with new date
+          .map((fc) =>
+            fc.uploadDateLabel === editingDateLabel
+              ? {
+                  ...fc,
+                  uploadDateLabel: newDateLabel,
+                  months,
+                }
+              : fc,
+          ),
       );
 
+      // Update sales orders: change the date label and remove any existing record with the new date
       const nextSales = sortPeriodsByUploadDate(
-        salesOrdersList.map((so) =>
-          so.uploadDateLabel === editingDateLabel
-            ? {
-                ...so,
-                uploadDateLabel: newDateLabel,
-                months,
-              }
-            : so,
-        ),
+        salesOrdersList
+          .filter((so) => so.uploadDateLabel !== newDateLabel) // Remove any existing record with new date
+          .map((so) =>
+            so.uploadDateLabel === editingDateLabel
+              ? {
+                  ...so,
+                  uploadDateLabel: newDateLabel,
+                  months,
+                }
+              : so,
+          ),
       );
 
       setForecastSummaryList(nextForecasts);
       setSalesOrdersList(nextSales);
-      persistSharedState(nextSales, nextForecasts);
+      const updatedAt = new Date().toISOString();
+      
+      // Update localStorage immediately to prevent stale data on reload
+      try {
+        localStorage.setItem("mvst_salesOrdersList", JSON.stringify(nextSales));
+        localStorage.setItem("mvst_forecastSummary", JSON.stringify(nextForecasts));
+        localStorage.setItem("mvst_state_updatedAt", JSON.stringify(updatedAt));
+      } catch {
+        // ignore
+      }
+      
+      // Save with updated timestamp
+      const saved = saveSharedWaterfallState({
+        salesOrdersList: nextSales,
+        forecastSummaryList: nextForecasts,
+        bomCosts,
+        updatedAt,
+      });
+      
+      // Log if the save fails (timestamp already set optimistically)
+      saved.then((success) => {
+        if (!success) {
+          console.error("Failed to save updated date to remote storage");
+        }
+      });
 
       setDatePickerOpen(false);
       setEditingDateLabel(null);
       setEditingDate(undefined);
       setEditingAnchor(null);
     },
-    [editingDateLabel, forecastSummaryList, persistSharedState, salesOrdersList],
+    [bomCosts, editingDateLabel, forecastSummaryList, salesOrdersList],
   );
 
   return (
@@ -357,6 +513,8 @@ export default function Home() {
           <DemandWaterfallTable
             salesOrdersList={filteredSalesOrdersList}
             forecastSummaryList={filteredForecastSummaryList}
+            bomCosts={bomCosts}
+            onBomCostsChange={handleBomCostsChange}
             editMode={editMode}
             onDateEdit={handleDateEdit}
             onDateDelete={handleDateDelete}

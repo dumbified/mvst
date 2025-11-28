@@ -1,7 +1,10 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { HotTable } from "@handsontable/react-wrapper";
+import type { HotTableRef } from "@handsontable/react-wrapper";
+import type Handsontable from "handsontable";
 import 'handsontable/styles/handsontable.min.css';
 import 'handsontable/styles/ht-theme-main.min.css';
 import { registerAllModules } from 'handsontable/registry';
@@ -19,8 +22,6 @@ import {
   createMergeCells,
   createNestedHeaders,
   createRowMetadataGetter,
-  createSummaryCellMeta,
-  createTotalsCellMeta,
   getRowsPerPeriod,
 } from "../lib/waterfallTable";
 
@@ -42,6 +43,8 @@ type DateAnchor = { top: number; left: number; width: number; height: number };
 type DemandWaterfallTableProps = {
   salesOrdersList?: SalesOrderSummary[];
   forecastSummaryList?: ForecastSummary[];
+  bomCosts?: Record<string, number>;
+  onBomCostsChange?: (bomCosts: Record<string, number>) => void;
   editMode?: boolean;
   onDateEdit?: (dateLabel: string, anchor?: DateAnchor) => void;
   onDateDelete?: (dateLabel: string) => void;
@@ -50,20 +53,23 @@ type DemandWaterfallTableProps = {
 export default function DemandWaterfallTable({
   salesOrdersList = [],
   forecastSummaryList = [],
+  bomCosts: propBomCosts,
+  onBomCostsChange,
   editMode = false,
   onDateEdit,
   onDateDelete,
 }: DemandWaterfallTableProps) {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(() => [...PLATFORM_OPTIONS]);
   const [showTotals, setShowTotals] = useState<boolean>(true);
-  const hotTableRef = useRef<any>(null);
+  const hotTableRef = useRef<HotTableRef | null>(null);
+  const getHotInstance = () => hotTableRef.current?.hotInstance as Handsontable | undefined;
   const bomEditorButtonRef = useRef<HTMLButtonElement>(null);
   const bomEditorPopupRef = useRef<HTMLDivElement>(null);
-  const [bomCosts, setBomCosts] = useState<Record<string, number>>(DEFAULT_BOM_COSTS);
+  const resolvedBomCosts = propBomCosts ?? DEFAULT_BOM_COSTS;
   const [isEditingCosts, setIsEditingCosts] = useState(false);
   const [editingCosts, setEditingCosts] = useState<Record<string, string>>(() => {
     const obj: Record<string, string> = {};
-    PLATFORM_OPTIONS.forEach((p) => (obj[p] = String(DEFAULT_BOM_COSTS[p] ?? 0)));
+    PLATFORM_OPTIONS.forEach((p) => (obj[p] = String(resolvedBomCosts[p] ?? 0)));
     return obj;
   });
 
@@ -78,35 +84,15 @@ export default function DemandWaterfallTable({
     [selectedPlatforms]
   );
 
-  // Load saved BOM costs from localStorage on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("mvst_bom_costs");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === "object") {
-          setBomCosts((prev) => ({ ...prev, ...parsed }));
-          const asStrings: Record<string, string> = {};
-          PLATFORM_OPTIONS.forEach((p) => (asStrings[p] = String(parsed[p] ?? DEFAULT_BOM_COSTS[p] ?? 0)));
-          setEditingCosts(asStrings);
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
   const saveBomCosts = () => {
     const next: Record<string, number> = {};
     PLATFORM_OPTIONS.forEach((p) => {
       const v = Number(String(editingCosts[p] ?? "").replace(/,/g, ""));
       next[p] = Number.isFinite(v) ? v : 0;
     });
-    setBomCosts(next);
-    try {
-      localStorage.setItem("mvst_bom_costs", JSON.stringify(next));
-    } catch {
-      // ignore storage errors
+    // Call the parent callback to sync to remote storage
+    if (onBomCostsChange) {
+      onBomCostsChange(next);
     }
     setIsEditingCosts(false);
   };
@@ -144,10 +130,10 @@ export default function DemandWaterfallTable({
         forecastSummaryList,
         visiblePlatforms,
         months,
-        bomCosts,
+        bomCosts: resolvedBomCosts,
         showTotals,
       }),
-    [bomCosts, effectivePeriods, forecastSummaryList, months, showTotals, visiblePlatforms],
+    [resolvedBomCosts, effectivePeriods, forecastSummaryList, months, showTotals, visiblePlatforms],
   );
 
   const nestedHeaders = useMemo(() => createNestedHeaders(months), [months]);
@@ -170,28 +156,6 @@ export default function DemandWaterfallTable({
   const mergeBodyCells = useMemo(
     () => createMergeCells(periodCount, rowsPerPeriod),
     [periodCount, rowsPerPeriod],
-  );
-
-  const totalsCellMeta = useMemo(
-    () =>
-      createTotalsCellMeta({
-        periodCount,
-        rowsPerPeriod,
-        monthsLength: months.length,
-        summaryColumnsLength: SUMMARY_COLUMNS.length,
-        showTotals,
-      }),
-    [months.length, periodCount, rowsPerPeriod, showTotals],
-  );
-
-  const summaryCellMeta = useMemo(
-    () =>
-      createSummaryCellMeta({
-        periodCount,
-        rowsPerPeriod,
-        monthsLength: months.length,
-      }),
-    [months.length, periodCount, rowsPerPeriod],
   );
 
   // Helper to get row metadata (period, platform index, isTotals, valid months)
@@ -236,8 +200,8 @@ export default function DemandWaterfallTable({
   // Function to reapply borders to all cells
   const reapplyBorders = useMemo(() => {
     return () => {
-      if (hotTableRef.current?.hotInstance) {
-        const hot = hotTableRef.current.hotInstance;
+      const hot = getHotInstance();
+      if (hot) {
         const container = hot.rootElement;
         if (!container) return;
         
@@ -301,8 +265,8 @@ export default function DemandWaterfallTable({
   }, [months, getRowMetadata]);
 
   useEffect(() => {
-    if (hotTableRef.current?.hotInstance) {
-      const hot = hotTableRef.current.hotInstance;
+    const hot = getHotInstance();
+    if (hot) {
       
       // Set header font size and weight directly via DOM
       const container = hot.rootElement;
@@ -387,7 +351,7 @@ export default function DemandWaterfallTable({
             onClick={() => {
               setEditingCosts((prev) => {
                 const next: Record<string, string> = { ...prev };
-                PLATFORM_OPTIONS.forEach((p) => (next[p] = String(bomCosts[p] ?? 0)));
+                PLATFORM_OPTIONS.forEach((p) => (next[p] = String(resolvedBomCosts[p] ?? 0)));
                 return next;
               });
               setIsEditingCosts((v) => !v);
@@ -664,7 +628,7 @@ export default function DemandWaterfallTable({
             if (row == null || col == null) return;
             if (col !== 0) return;
             try {
-              const table = hotTableRef.current?.hotInstance;
+              const table = getHotInstance();
               const label = table?.getDataAtCell(row, 0);
               if (label && typeof label === "string") {
                 if (event?.button === 2) {

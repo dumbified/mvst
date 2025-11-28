@@ -1,13 +1,11 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-let cachedClient:
-  | ReturnType<typeof createClient<any, any, any>>
-  | null = null;
+let cachedClient: SupabaseClient | null = null;
 
-export function getSupabase() {
+export function getSupabase(): SupabaseClient {
   if (cachedClient) return cachedClient;
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
@@ -17,5 +15,4 @@ export function getSupabase() {
   cachedClient = createClient(supabaseUrl, supabaseAnonKey);
   return cachedClient;
 }
-
 
