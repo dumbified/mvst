@@ -159,6 +159,7 @@ export const parseForecastCsv = (
   const partIndex = normalizedHeaders.indexOf("part#");
   const dateIndex = normalizedHeaders.indexOf("forecastdate");
   const qtyIndex = normalizedHeaders.indexOf("forecastqty");
+  const inactiveIndex = normalizedHeaders.indexOf("forecastinactive");
 
   if (partIndex === -1 || dateIndex === -1 || qtyIndex === -1) {
     return null;
@@ -173,6 +174,15 @@ export const parseForecastCsv = (
     const line = lines[i];
     if (!line.trim()) continue;
     const cells = parseDelimitedLine(line, delimiter);
+
+    // Filter: only process rows where "Forecast Inactive" is False
+    if (inactiveIndex !== -1) {
+      const inactiveValue = (cells[inactiveIndex] ?? "").trim().toLowerCase();
+      // Skip rows where Forecast Inactive is not False (could be "True", "1", "Yes", etc.)
+      if (inactiveValue !== "false" && inactiveValue !== "") {
+        continue;
+      }
+    }
 
     const partRaw = (cells[partIndex] ?? "").trim().toLowerCase();
     const platform = PART_NUMBER_TO_PLATFORM[partRaw];
