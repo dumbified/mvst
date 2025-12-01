@@ -142,7 +142,8 @@ export function buildDataRows({
 
     visiblePlatforms.forEach((platform) => {
       const row: (string | number)[] = [];
-      row.push(salesOrders.uploadDateLabel);
+      const displayUploadLabel = periodForecast?.uploadDateLabel ?? salesOrders.uploadDateLabel;
+      row.push(displayUploadLabel);
       row.push(platform);
 
       let soSum = 0;

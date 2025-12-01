@@ -1,28 +1,18 @@
-'use client';
+"use client";
 
-import { formatMonthLabel, monthKeyFromDate } from "./salesOrders";
+import { MONTH_ABBREVIATIONS, formatMonthLabel, monthKeyFromDate } from "./salesOrders";
 
-const MONTH_LOOKUP: Record<string, number> = {
-  Jan: 0,
-  Feb: 1,
-  Mar: 2,
-  Apr: 3,
-  May: 4,
-  Jun: 5,
-  Jul: 6,
-  Aug: 7,
-  Sep: 8,
-  Oct: 9,
-  Nov: 10,
-  Dec: 11,
-};
+const MONTH_LOOKUP = MONTH_ABBREVIATIONS.reduce<Record<string, number>>((acc, month, index) => {
+  acc[month.toLowerCase()] = index;
+  return acc;
+}, {});
 
 export const parseDateLabel = (dateLabel: string): Date | null => {
-  const match = dateLabel.trim().match(/^(\d{2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  const match = dateLabel.trim().match(/^(\d{2})(?:\s|-)([A-Za-z]{3})(?:\s|-)(\d{4})$/i);
   if (!match) return null;
   const [, dayStr, monthStrRaw, yearStr] = match;
-  const monthStr = monthStrRaw.slice(0, 3);
-  const monthIndex = MONTH_LOOKUP[monthStr as keyof typeof MONTH_LOOKUP];
+  const monthStr = monthStrRaw.slice(0, 3).toLowerCase();
+  const monthIndex = MONTH_LOOKUP[monthStr];
   if (monthIndex == null) return null;
   const day = Number(dayStr);
   const year = Number(yearStr);

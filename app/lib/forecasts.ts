@@ -1,10 +1,12 @@
 import {
+  MONTH_ABBREVIATIONS,
   PLATFORM_LABELS,
   formatMonthLabel,
   formatFullDate,
   monthKeyFromDate,
   PART_NUMBER_TO_PLATFORM,
   PlatformKey,
+  parseDmyDateTime,
 } from "./salesOrders";
 
 export type ForecastSummary = {
@@ -58,36 +60,24 @@ const sanitizeQuantity = (value: string) => {
   return Number.isFinite(qty) ? qty : 0;
 };
 
-const MONTH_INDEX: Record<string, number> = {
-  jan: 0,
-  feb: 1,
-  mar: 2,
-  apr: 3,
-  may: 4,
-  jun: 5,
-  jul: 6,
-  aug: 7,
-  sep: 8,
-  oct: 9,
-  nov: 10,
-  dec: 11,
-};
+const MONTH_LOOKUP = MONTH_ABBREVIATIONS.reduce<Record<string, number>>((acc, month, index) => {
+  acc[month.toLowerCase()] = index;
+  return acc;
+}, {});
 
 const parseForecastDate = (value: string) => {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
+  const parsed = parseDmyDateTime(value);
+  if (parsed) return parsed;
 
-  const direct = new Date(trimmed);
-  if (!Number.isNaN(direct.getTime())) {
-    return direct;
-  }
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return null;
 
   const match = trimmed.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3})[-\/\s](\d{2,4})$/);
   if (!match) return null;
 
   const day = Number(match[1]);
-  const month = MONTH_INDEX[match[2].toLowerCase()];
+  const monthKey = match[2].slice(0, 3).toLowerCase();
+  const month = MONTH_LOOKUP[monthKey];
   if (month === undefined) return null;
 
   const yearValue = Number(match[3]);

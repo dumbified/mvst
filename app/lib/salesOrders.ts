@@ -25,15 +25,24 @@ export const PART_NUMBER_TO_PLATFORM: Record<string, PlatformKey> = {
   "9300-i010": "TH3K",
 };
 
+export const MONTH_ABBREVIATIONS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
 const MONTH_LABEL_FORMATTER = new Intl.DateTimeFormat("en-GB", {
   month: "short",
   year: "2-digit",
-});
-
-const FULL_DATE_FORMATTER = new Intl.DateTimeFormat("en-GB", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
 });
 
 const normalizeHeader = (header: string) =>
@@ -112,7 +121,40 @@ export const formatMonthLabel = (key: string) => {
   return MONTH_LABEL_FORMATTER.format(date);
 };
 
-export const formatFullDate = (date: Date) => FULL_DATE_FORMATTER.format(date);
+export const formatFullDate = (date: Date) => {
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = MONTH_ABBREVIATIONS[date.getMonth()];
+  const year = date.getFullYear();
+  return `${day} ${month} ${year}`;
+};
+
+export const RAW_DMY_DATE_PATTERN =
+  /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
+
+export const parseDmyDateTime = (value: string) => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(RAW_DMY_DATE_PATTERN);
+  if (match) {
+    const [, dayStr, monthStr, yearStr, hourStr = "0", minuteStr = "0", secondStr = "0"] =
+      match;
+    const day = Number(dayStr);
+    const monthIndex = Number(monthStr) - 1;
+    const year = Number(yearStr);
+    const hours = Number(hourStr);
+    const minutes = Number(minuteStr);
+    const seconds = Number(secondStr);
+    const parsed = new Date(year, monthIndex, day, hours, minutes, seconds);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  const fallback = new Date(trimmed);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
+};
 
 const sanitizeQuantity = (value: string) => {
   const cleaned = value.replace(/,/g, "");
@@ -120,13 +162,7 @@ const sanitizeQuantity = (value: string) => {
   return Number.isFinite(qty) ? qty : 0;
 };
 
-const parseShipByDate = (value: string) => {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = new Date(trimmed);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
+const parseShipByDate = (value: string) => parseDmyDateTime(value);
 
 const initializeTotals = (): Record<PlatformKey, Record<string, SalesOrderBucket>> =>
   PLATFORM_LABELS.reduce(
