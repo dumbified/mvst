@@ -436,8 +436,14 @@ export default function Home() {
 
   return (
     <main className="min-h-screen p-6 md:p-10 flex flex-col gap-6 bg-white">
-      <header className="space-y-2">
+      <header className="space-y-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
         <h1 className="text-xl md:text-2xl font-semibold">MVS-T Demand Waterfall</h1>
+        <a
+          href="/forecast-accuracy"
+          className="inline-flex items-center rounded-md border border-emerald-500 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+        >
+          View Forecast Accuracy
+        </a>
       </header>
       <section className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">

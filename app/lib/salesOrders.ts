@@ -3,6 +3,8 @@ export type PlatformKey = "TH3K" | "TR3K" | "TRS+" | "THSE";
 export type SalesOrderBucket = {
   quantity: number;
   jobNumbers: string[];
+  shipped: number;
+  open: number;
 };
 
 export type SalesOrderSummary = {
@@ -182,6 +184,8 @@ const getOrCreateBucket = (
     totals[platform][monthKey] = {
       quantity: 0,
       jobNumbers: [],
+      shipped: 0,
+      open: 0,
     };
   }
   return totals[platform][monthKey];
@@ -209,10 +213,18 @@ export const parseSalesOrdersCsv = (
   const headers = parseDelimitedLine(headerLine, delimiter);
   const normalizedHeaders = headers.map(normalizeHeader);
 
-  const orderPartIndex = normalizedHeaders.indexOf("orderpart");
-  const shipByIndex = normalizedHeaders.indexOf("shipby");
+  // Try new column names first, fall back to old ones for backward compatibility
+  const orderPartIndex = normalizedHeaders.indexOf("part#") !== -1 
+    ? normalizedHeaders.indexOf("part#")
+    : normalizedHeaders.indexOf("orderpart");
+  const shipByIndex = normalizedHeaders.indexOf("relshipbydate") !== -1
+    ? normalizedHeaders.indexOf("relshipbydate")
+    : normalizedHeaders.indexOf("shipby");
   const orderQtyIndex = normalizedHeaders.indexOf("orderqty");
-  const jobNumberIndex = normalizedHeaders.indexOf("jobnumber");
+  const jobNumberIndex = normalizedHeaders.indexOf("job#") !== -1
+    ? normalizedHeaders.indexOf("job#")
+    : normalizedHeaders.indexOf("jobnumber");
+  const statusIndex = normalizedHeaders.indexOf("status");
 
   if (orderPartIndex === -1 || shipByIndex === -1 || orderQtyIndex === -1) {
     return null;
@@ -230,6 +242,14 @@ export const parseSalesOrdersCsv = (
     const platform = PART_NUMBER_TO_PLATFORM[orderPartRaw];
     if (!platform) continue;
 
+    // Filter out void status if status column exists
+    if (statusIndex !== -1) {
+      const status = (cells[statusIndex] ?? "").trim().toLowerCase();
+      if (status === "void") {
+        continue;
+      }
+    }
+
     const shipByDate = parseShipByDate(cells[shipByIndex] ?? "");
     if (!shipByDate) continue;
 
@@ -237,13 +257,21 @@ export const parseSalesOrdersCsv = (
     if (!quantity) continue;
 
     const monthKey = monthKeyFromDate(shipByDate);
-    if (compareMonthKeys(monthKey, uploadMonthKey) < 0) {
-      continue;
-    }
+    // Keep all data regardless of upload month - allows showing data when date is changed to previous month
     monthSet.add(monthKey);
 
     const bucket = getOrCreateBucket(totals, platform, monthKey);
     bucket.quantity += quantity;
+
+    // Track status breakdown if status column exists
+    if (statusIndex !== -1) {
+      const status = (cells[statusIndex] ?? "").trim().toLowerCase();
+      if (status === "shipped") {
+        bucket.shipped += quantity;
+      } else if (status === "open") {
+        bucket.open += quantity;
+      }
+    }
 
     if (jobNumberIndex !== -1) {
       const jobNumber = (cells[jobNumberIndex] ?? "").trim();
