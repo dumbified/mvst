@@ -1,4 +1,4 @@
-export type PlatformKey = "TH3K" | "TR3K" | "TRS+" | "THSE";
+import { PlatformKey, PLATFORM_LABELS, MONTH_ABBREVIATIONS, PART_NUMBER_TO_PLATFORM } from './constants';
 
 export type SalesOrderBucket = {
   quantity: number;
@@ -13,78 +13,16 @@ export type SalesOrderSummary = {
   totals: Record<PlatformKey, Record<string, SalesOrderBucket>>;
 };
 
-export const PLATFORM_LABELS: readonly PlatformKey[] = ["TH3K", "TR3K", "TRS+", "THSE"];
-
-export const PART_NUMBER_TO_PLATFORM: Record<string, PlatformKey> = {
-  "9300-ai001": "TH3K",
-  "9301-ai001": "TH3K",
-  "9300-ai002": "TR3K",
-  "9301-ai002": "TR3K",
-  "9300-i013": "TRS+",
-  "9301-i013": "TRS+",
-  "9300-i012": "THSE",
-  "9300-i011": "TR3K",
-  "9300-i010": "TH3K",
-};
-
-export const MONTH_ABBREVIATIONS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-] as const;
+// Re-export for backward compatibility
+export type { PlatformKey };
+export { PLATFORM_LABELS, MONTH_ABBREVIATIONS, PART_NUMBER_TO_PLATFORM };
 
 const MONTH_LABEL_FORMATTER = new Intl.DateTimeFormat("en-GB", {
   month: "short",
   year: "2-digit",
 });
 
-const normalizeHeader = (header: string) =>
-  header.replace(/\s+/g, "").replace(/\./g, "").toLowerCase();
-
-const detectDelimiter = (line: string) => {
-  const commaCount = (line.match(/,/g) || []).length;
-  const tabCount = (line.match(/\t/g) || []).length;
-  return tabCount > commaCount ? "\t" : ",";
-};
-
-const parseDelimitedLine = (line: string, delimiter: string) => {
-  const values: string[] = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (char === delimiter && !inQuotes) {
-      values.push(current);
-      current = "";
-      continue;
-    }
-
-    current += char;
-  }
-
-  values.push(current);
-  return values.map((value) => value.replace(/\r$/, ""));
-};
+import { normalizeHeader, detectDelimiter, parseDelimitedLine } from './csvUtils';
 
 export const monthKeyFromDate = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;

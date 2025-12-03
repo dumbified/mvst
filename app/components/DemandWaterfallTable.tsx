@@ -8,7 +8,8 @@ import type Handsontable from "handsontable";
 import 'handsontable/styles/handsontable.min.css';
 import 'handsontable/styles/ht-theme-main.min.css';
 import { registerAllModules } from 'handsontable/registry';
-import { PLATFORM_LABELS, PlatformKey, SalesOrderSummary } from "../lib/salesOrders";
+import { SalesOrderSummary } from "../lib/salesOrders";
+import { PLATFORM_LABELS, PlatformKey } from "../lib/constants";
 import { ForecastSummary } from "../lib/forecasts";
 import { textRenderer } from "handsontable/renderers/textRenderer";
 import {
@@ -24,19 +25,14 @@ import {
   createRowMetadataGetter,
   getRowsPerPeriod,
 } from "../lib/waterfallTable";
+import { fetchMachineIdData, buildMachineIdMap, PlatformMonthMachineIdMap } from "../lib/machineIds";
+import { DEFAULT_BOM_COSTS } from "../lib/constants";
 
 registerAllModules();
 
 const PLATFORM_OPTIONS: PlatformKey[] = [...PLATFORM_LABELS];
 
 const TABLE_FONT_SIZE_PX = 10;
-
-const DEFAULT_BOM_COSTS: Record<string, number> = {
-  TH3K: 583382,
-  TR3K: 834063,
-  THSE: 306667,
-  "TRS+": 390193,
-};
 
 type DateAnchor = { top: number; left: number; width: number; height: number };
 
@@ -72,12 +68,39 @@ export default function DemandWaterfallTable({
     PLATFORM_OPTIONS.forEach((p) => (obj[p] = String(resolvedBomCosts[p] ?? 0)));
     return obj;
   });
+  const [platformMonthMachineIdMap, setPlatformMonthMachineIdMap] = useState<PlatformMonthMachineIdMap | undefined>(undefined);
 
   // Merge all months from uploads and forecasts
   const months = useMemo<MonthColumn[]>(
     () => computeMonths(salesOrdersList, forecastSummaryList),
     [salesOrdersList, forecastSummaryList],
   );
+
+  // Fetch machine ID data on mount
+  useEffect(() => {
+    let cancelled = false;
+    
+    const loadMachineIds = async () => {
+      try {
+        const machineIdData = await fetchMachineIdData();
+        
+        if (!cancelled && machineIdData.length > 0) {
+          const { platformMonthMap } = buildMachineIdMap(machineIdData, months);
+          setPlatformMonthMachineIdMap(platformMonthMap);
+        }
+      } catch (error) {
+        // Failed to load machine IDs
+      }
+    };
+
+    if (months.length > 0) {
+      loadMachineIds();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [months]);
 
   const visiblePlatforms = useMemo(
     () => PLATFORM_OPTIONS.filter((platform) => selectedPlatforms.includes(platform)),
@@ -169,16 +192,50 @@ export default function DemandWaterfallTable({
     [effectivePeriods, rowsPerPeriod, showTotals],
   );
 
-  const cellComments = useMemo(
+  const cellCommentsArray = useMemo(
     () =>
       buildCellComments({
         salesOrdersList,
+        forecastSummaryList,
         visiblePlatforms,
         months,
         showTotals,
+        platformMonthMachineIdMap,
       }),
-    [months, salesOrdersList, showTotals, visiblePlatforms],
+    [months, salesOrdersList, forecastSummaryList, showTotals, visiblePlatforms, platformMonthMachineIdMap],
   );
+
+  // Convert comments array to a Map for quick lookup
+  const cellCommentsMap = useMemo(() => {
+    const map = new Map<string, { value: string }>();
+    cellCommentsArray.forEach((comment) => {
+      const key = `${comment.row},${comment.col}`;
+      map.set(key, comment.comment);
+    });
+    return map;
+  }, [cellCommentsArray]);
+
+  // Set comments using Handsontable API after table is ready
+  useEffect(() => {
+    const hot = getHotInstance();
+    if (!hot || cellCommentsMap.size === 0) {
+      return;
+    }
+    
+    cellCommentsMap.forEach((comment, key) => {
+      const [row, col] = key.split(',').map(Number);
+      try {
+        hot.setCellMeta(row, col, 'comment', comment);
+      } catch (error) {
+        // Error setting comment
+      }
+    });
+    
+    // Force render to show comment indicators
+    setTimeout(() => {
+      hot.render();
+    }, 100);
+  }, [cellCommentsMap, data]);
 
   // Numeric renderer with thousand separators
   const numberRenderer = useMemo(() => {
@@ -508,10 +565,16 @@ export default function DemandWaterfallTable({
           licenseKey="non-commercial-and-evaluation"
           mergeCells={mergeBodyCells}
           comments={true}
-          cell={cellComments}
           cells={(row, col) => {
             const props: any = {};
             const classNames: string[] = [];
+            
+            // Check if this cell has a comment
+            const commentKey = `${row},${col}`;
+            const comment = cellCommentsMap.get(commentKey);
+            if (comment) {
+              props.comment = comment;
+            }
             
             // Get row metadata
             const metadata = getRowMetadata(row);

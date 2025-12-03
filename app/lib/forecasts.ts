@@ -1,57 +1,16 @@
 import {
-  MONTH_ABBREVIATIONS,
-  PLATFORM_LABELS,
   formatMonthLabel,
   formatFullDate,
   monthKeyFromDate,
-  PART_NUMBER_TO_PLATFORM,
-  PlatformKey,
   parseDmyDateTime,
 } from "./salesOrders";
+import { MONTH_ABBREVIATIONS, PLATFORM_LABELS, PART_NUMBER_TO_PLATFORM, PlatformKey } from "./constants";
+import { normalizeHeader, detectDelimiter, parseDelimitedLine } from './csvUtils';
 
 export type ForecastSummary = {
   uploadDateLabel: string;
   months: { key: string; label: string }[];
   totals: Record<PlatformKey, Record<string, number>>;
-};
-
-const NORMALIZE_HEADER = (header: string) =>
-  header.replace(/\s+/g, "").replace(/\./g, "").toLowerCase();
-
-const detectDelimiter = (line: string) => {
-  const commaCount = (line.match(/,/g) || []).length;
-  const tabCount = (line.match(/\t/g) || []).length;
-  return tabCount > commaCount ? "\t" : ",";
-};
-
-const parseDelimitedLine = (line: string, delimiter: string) => {
-  const values: string[] = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (char === delimiter && !inQuotes) {
-      values.push(current);
-      current = "";
-      continue;
-    }
-
-    current += char;
-  }
-
-  values.push(current);
-  return values.map((value) => value.replace(/\r$/, ""));
 };
 
 const sanitizeQuantity = (value: string) => {
@@ -144,7 +103,7 @@ export const parseForecastCsv = (
   const headerLine = lines[0].replace(/^\uFEFF/, "");
   const delimiter = detectDelimiter(headerLine);
   const headers = parseDelimitedLine(headerLine, delimiter);
-  const normalizedHeaders = headers.map(NORMALIZE_HEADER);
+  const normalizedHeaders = headers.map(normalizeHeader);
 
   const partIndex = normalizedHeaders.indexOf("part#");
   const dateIndex = normalizedHeaders.indexOf("forecastdate");

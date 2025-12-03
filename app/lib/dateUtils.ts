@@ -1,6 +1,7 @@
 "use client";
 
-import { MONTH_ABBREVIATIONS, formatMonthLabel, monthKeyFromDate } from "./salesOrders";
+import { formatMonthLabel, monthKeyFromDate } from "./salesOrders";
+import { MONTH_ABBREVIATIONS } from "./constants";
 
 const MONTH_LOOKUP = MONTH_ABBREVIATIONS.reduce<Record<string, number>>((acc, month, index) => {
   acc[month.toLowerCase()] = index;

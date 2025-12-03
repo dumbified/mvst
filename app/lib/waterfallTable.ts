@@ -1,11 +1,11 @@
 import {
-  PLATFORM_LABELS,
-  PlatformKey,
   SalesOrderBucket,
   SalesOrderSummary,
   formatMonthLabel,
 } from "./salesOrders";
+import { PLATFORM_LABELS, PlatformKey } from "./constants";
 import { ForecastSummary } from "./forecasts";
+import { PlatformMonthMachineIdMap, getMachineIdsForPlatformAndMonth } from "./machineIds";
 
 export type MonthColumn = { key: string; label: string };
 
@@ -281,69 +281,6 @@ export function createMergeCells(periodCount: number, rowsPerPeriod: number): Me
   return merges;
 }
 
-type TotalsCellMetaArgs = {
-  periodCount: number;
-  rowsPerPeriod: number;
-  monthsLength: number;
-  summaryColumnsLength: number;
-  showTotals: boolean;
-};
-
-export function createTotalsCellMeta({
-  periodCount,
-  rowsPerPeriod,
-  monthsLength,
-  summaryColumnsLength,
-  showTotals,
-}: TotalsCellMetaArgs): CellMetaClass[] {
-  if (!showTotals || rowsPerPeriod === 0 || periodCount === 0) return [];
-  const totalCols = 2 + monthsLength * 3 + summaryColumnsLength;
-  const cells: CellMetaClass[] = [];
-
-  for (let periodIndex = 0; periodIndex < periodCount; periodIndex++) {
-    const totalsRowIndex = periodIndex * rowsPerPeriod + (rowsPerPeriod - 1);
-    for (let c = 1; c < totalCols; c++) {
-      cells.push({
-        row: totalsRowIndex,
-        col: c,
-        className: "totals-cell",
-      });
-    }
-    cells.push({ row: totalsRowIndex, col: 1, className: "totals-cell totals-cell-label" });
-  }
-
-  return cells;
-}
-
-type SummaryCellMetaArgs = {
-  periodCount: number;
-  rowsPerPeriod: number;
-  monthsLength: number;
-};
-
-export function createSummaryCellMeta({
-  periodCount,
-  rowsPerPeriod,
-  monthsLength,
-}: SummaryCellMetaArgs): CellMetaClass[] {
-  if (rowsPerPeriod === 0 || periodCount === 0) return [];
-  const meta: CellMetaClass[] = [];
-  const summaryStart = 2 + monthsLength * 3;
-  const numRows = periodCount * rowsPerPeriod;
-
-  for (let r = 0; r < numRows; r++) {
-    for (let i = 0; i < SUMMARY_COLUMNS.length; i++) {
-      meta.push({
-        row: r,
-        col: summaryStart + i,
-        className: "summary-cell",
-      });
-    }
-  }
-
-  return meta;
-}
-
 type RowMetadataArgs = {
   effectivePeriods: SalesOrderSummary[];
   rowsPerPeriod: number;
@@ -378,40 +315,80 @@ export function createRowMetadataGetter({
 
 type CellCommentsArgs = {
   salesOrdersList: SalesOrderSummary[];
+  forecastSummaryList: ForecastSummary[];
   visiblePlatforms: PlatformKey[];
   months: MonthColumn[];
   showTotals: boolean;
+  platformMonthMachineIdMap?: PlatformMonthMachineIdMap;
 };
 
 export function buildCellComments({
   salesOrdersList,
+  forecastSummaryList,
   visiblePlatforms,
   months,
   showTotals,
+  platformMonthMachineIdMap,
 }: CellCommentsArgs) {
   if (salesOrdersList.length === 0) return [];
   const comments: { row: number; col: number; comment: { value: string } }[] = [];
   const rowsPerPeriod = getRowsPerPeriod(showTotals, visiblePlatforms.length);
 
+  // Create forecast map for quick lookup
+  const forecastMap = new Map<string, ForecastSummary>();
+  forecastSummaryList.forEach((fc) => {
+    forecastMap.set(fc.uploadDateLabel, fc);
+  });
+
   salesOrdersList.forEach((salesOrders, periodIndex) => {
     const periodMonthKeys = new Set(salesOrders.months.map((m) => m.key));
+    const periodForecast = forecastMap.get(salesOrders.uploadDateLabel);
 
     visiblePlatforms.forEach((platform, platformIndex) => {
       const rowIndex = rowsPerPeriod === 0 ? 0 : periodIndex * rowsPerPeriod + platformIndex;
       const totals = salesOrders.totals[platform] ?? {};
+      const platformForecast = periodForecast?.totals[platform] ?? {};
+
       months.forEach((month, monthIndex) => {
         if (!periodMonthKeys.has(month.key)) return;
 
         const bucket = totals[month.key];
-        if (!bucket || bucket.jobNumbers.length === 0) return;
         const colIndex = 2 + monthIndex * 3;
-        comments.push({
-          row: rowIndex,
-          col: colIndex,
-          comment: {
-            value: bucket.jobNumbers.join("\n"),
-          },
-        });
+
+        // Add SO comments (job numbers)
+        if (bucket && bucket.jobNumbers.length > 0) {
+          comments.push({
+            row: rowIndex,
+            col: colIndex,
+            comment: {
+              value: bucket.jobNumbers.join("\n"),
+            },
+          });
+        }
+
+        // Add Forecast comments (machine IDs = job numbers)
+        // This is for Forecast only, ignore SO
+        const forecastValue = platformForecast[month.key];
+        if (forecastValue && Number(forecastValue) > 0 && platformMonthMachineIdMap) {
+          // Get machine IDs (job numbers) for this platform and month
+          const machineIds = getMachineIdsForPlatformAndMonth(
+            platformMonthMachineIdMap,
+            platform,
+            month.key
+          );
+
+          if (machineIds.length > 0) {
+            const forecastColIndex = colIndex + 1; // Forecast column is next to SO column
+            const machineIdList = machineIds.join("\n");
+            comments.push({
+              row: rowIndex,
+              col: forecastColIndex,
+              comment: {
+                value: machineIdList,
+              },
+            });
+          }
+        }
       });
     });
   });

@@ -22,8 +22,9 @@ const createInitialWarningsState = (): Record<UploadKey, string | null> => ({
 });
 
 type UploadControlsProps = {
-  onSalesOrdersUpload?: (file: File) => void;
-  onForecastUpload?: (file: File) => void;
+  onSalesOrdersUpload?: (file: File, uploadDate?: Date) => void;
+  onForecastUpload?: (file: File, uploadDate?: Date) => void;
+  onCombinedUpload?: (soFile: File, forecastFile: File) => void;
   editMode?: boolean;
   onToggleEditMode?: () => void;
 };
@@ -31,6 +32,7 @@ type UploadControlsProps = {
 export default function UploadControls({
   onSalesOrdersUpload,
   onForecastUpload,
+  onCombinedUpload,
   editMode = false,
   onToggleEditMode,
 }: UploadControlsProps) {
@@ -105,11 +107,21 @@ export default function UploadControls({
 
   const handleSave = async () => {
     try {
-      if (files.salesOrders && onSalesOrdersUpload) {
-        await onSalesOrdersUpload(files.salesOrders);
-      }
-      if (files.forecast && onForecastUpload) {
-        await onForecastUpload(files.forecast);
+      // If both files are present, use the combined upload handler
+      // This ensures they are processed together with the same date
+      if (files.salesOrders && files.forecast && onCombinedUpload) {
+        await onCombinedUpload(files.salesOrders, files.forecast);
+      } else {
+        // Otherwise, process them separately
+        // Use the same upload date for both if both are being uploaded together
+        const sharedUploadDate = (files.salesOrders && files.forecast) ? new Date() : undefined;
+        
+        if (files.salesOrders && onSalesOrdersUpload) {
+          await onSalesOrdersUpload(files.salesOrders, sharedUploadDate);
+        }
+        if (files.forecast && onForecastUpload) {
+          await onForecastUpload(files.forecast, sharedUploadDate);
+        }
       }
     } finally {
       resetSelections();

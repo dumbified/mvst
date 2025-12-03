@@ -10,13 +10,8 @@ import { uploadFileToSupabase } from "./lib/storage";
 import { buildMonthsWindow, parseDateLabel, sortPeriodsByUploadDate } from "./lib/dateUtils";
 import { useMonthFilter } from "./hooks/useMonthFilter";
 import { loadSharedWaterfallState, saveSharedWaterfallState } from "./lib/stateStorage";
-
-const DEFAULT_BOM_COSTS: Record<string, number> = {
-  TH3K: 583382,
-  TR3K: 834063,
-  THSE: 306667,
-  "TRS+": 390193,
-};
+import { DEFAULT_BOM_COSTS } from "./lib/constants";
+import { getLocalStorageTimestamp, setLocalStorageTimestamp } from "./lib/localStorageUtils";
 
 export default function Home() {
   const [salesOrdersList, setSalesOrdersList] = useState<SalesOrderSummary[]>([]);
@@ -81,18 +76,7 @@ export default function Home() {
       ): T[] => {
         if (!remote || remote.length === 0) return local;
         
-        // Get local storage timestamp for comparison
-        let localUpdatedAt: string | null = null;
-        try {
-          const stateJson = localStorage.getItem("mvst_state_updatedAt");
-          if (stateJson) {
-            localUpdatedAt = JSON.parse(stateJson);
-          }
-        } catch {
-          // ignore
-        }
-        
-      // Prefer remote if it has a newer timestamp, otherwise prefer local
+        const localUpdatedAt = getLocalStorageTimestamp();
         const preferRemote = remoteUpdatedAt && (!localUpdatedAt || remoteUpdatedAt > localUpdatedAt);
         
         if (preferRemote) {
@@ -100,8 +84,8 @@ export default function Home() {
           // This ensures deletions and updates in remote are respected
           return [...remote];
         } else {
-        // If local is newer or equal, trust local entirely (remote may contain stale data)
-        return [...local];
+          // If local is newer or equal, trust local entirely (remote may contain stale data)
+          return [...local];
         }
       };
 
@@ -114,17 +98,7 @@ export default function Home() {
         mergedBomCosts = { ...mergedBomCosts, ...localBomCosts };
       }
       if (remote?.bomCosts) {
-        // Get local storage timestamp for comparison
-        let localUpdatedAt: string | null = null;
-        try {
-          const stateJson = localStorage.getItem("mvst_state_updatedAt");
-          if (stateJson) {
-            localUpdatedAt = JSON.parse(stateJson);
-          }
-        } catch {
-          // ignore
-        }
-        // Prefer remote if it has a newer timestamp
+        const localUpdatedAt = getLocalStorageTimestamp();
         const preferRemote = remote.updatedAt && (!localUpdatedAt || remote.updatedAt > localUpdatedAt);
         if (preferRemote) {
           mergedBomCosts = { ...DEFAULT_BOM_COSTS, ...remote.bomCosts };
@@ -190,11 +164,7 @@ export default function Home() {
   const persistSharedState = useCallback(
     async (nextSales: SalesOrderSummary[], nextForecasts: ForecastSummary[], nextBomCosts?: Record<string, number>) => {
       const updatedAt = new Date().toISOString();
-      try {
-        localStorage.setItem("mvst_state_updatedAt", JSON.stringify(updatedAt));
-      } catch {
-        // ignore
-      }
+      setLocalStorageTimestamp(updatedAt);
       await saveSharedWaterfallState({
         salesOrdersList: nextSales,
         forecastSummaryList: nextForecasts,
@@ -206,36 +176,79 @@ export default function Home() {
   );
 
   const handleSalesOrdersUpload = useCallback(
-    async (file: File) => {
+    async (file: File, uploadDate?: Date) => {
       try {
         await uploadFileToSupabase(bucketName, file, "sales-orders");
         const csvText = await file.text();
-        const summary = parseSalesOrdersCsv(csvText, new Date());
+        const dateToUse = uploadDate ?? new Date();
+        const summary = parseSalesOrdersCsv(csvText, dateToUse);
         if (summary) {
           const nextSales = sortPeriodsByUploadDate([...salesOrdersList, summary]);
           setSalesOrdersList(nextSales);
           persistSharedState(nextSales, forecastSummaryList);
         }
       } catch (error) {
-        console.error("Failed to process Sales Orders CSV", error);
+        // Failed to process Sales Orders CSV
       }
     },
     [bucketName, forecastSummaryList, persistSharedState, salesOrdersList],
   );
 
   const handleForecastUpload = useCallback(
-    async (file: File) => {
+    async (file: File, uploadDate?: Date) => {
       try {
         await uploadFileToSupabase(bucketName, file, "forecasts");
         const csvText = await file.text();
-        const summary = parseForecastCsv(csvText, new Date());
+        const dateToUse = uploadDate ?? new Date();
+        const summary = parseForecastCsv(csvText, dateToUse);
         if (summary) {
           const nextForecasts = sortPeriodsByUploadDate([...forecastSummaryList, summary]);
           setForecastSummaryList(nextForecasts);
           persistSharedState(salesOrdersList, nextForecasts);
         }
       } catch (error) {
-        console.error("Failed to process Forecast CSV", error);
+        // Failed to process Forecast CSV
+      }
+    },
+    [bucketName, forecastSummaryList, persistSharedState, salesOrdersList],
+  );
+
+  // Combined handler for when both files are uploaded together
+  const handleCombinedUpload = useCallback(
+    async (soFile: File, forecastFile: File) => {
+      try {
+        const sharedUploadDate = new Date();
+        
+        // Upload both files
+        await Promise.all([
+          uploadFileToSupabase(bucketName, soFile, "sales-orders"),
+          uploadFileToSupabase(bucketName, forecastFile, "forecasts"),
+        ]);
+        
+        // Parse both files
+        const [soText, forecastText] = await Promise.all([
+          soFile.text(),
+          forecastFile.text(),
+        ]);
+        
+        const soSummary = parseSalesOrdersCsv(soText, sharedUploadDate);
+        const forecastSummary = parseForecastCsv(forecastText, sharedUploadDate);
+        
+        // Update both states together
+        if (soSummary || forecastSummary) {
+          const nextSales = soSummary 
+            ? sortPeriodsByUploadDate([...salesOrdersList, soSummary])
+            : salesOrdersList;
+          const nextForecasts = forecastSummary
+            ? sortPeriodsByUploadDate([...forecastSummaryList, forecastSummary])
+            : forecastSummaryList;
+          
+          setSalesOrdersList(nextSales);
+          setForecastSummaryList(nextForecasts);
+          persistSharedState(nextSales, nextForecasts);
+        }
+      } catch (error) {
+        // Failed to process combined upload
       }
     },
     [bucketName, forecastSummaryList, persistSharedState, salesOrdersList],
@@ -249,27 +262,18 @@ export default function Home() {
       // Update localStorage immediately
       try {
         localStorage.setItem("mvst_bom_costs", JSON.stringify(newBomCosts));
-        localStorage.setItem("mvst_state_updatedAt", JSON.stringify(updatedAt));
       } catch {
         // ignore
       }
+      setLocalStorageTimestamp(updatedAt);
       
       // Save to remote storage with updated timestamp
-      const saved = await saveSharedWaterfallState({
+      await saveSharedWaterfallState({
         salesOrdersList,
         forecastSummaryList,
         bomCosts: newBomCosts,
         updatedAt,
       });
-      
-      // Save timestamp to localStorage for merge comparison
-      if (saved) {
-        try {
-          localStorage.setItem("mvst_state_updatedAt", JSON.stringify(updatedAt));
-        } catch {
-          // ignore
-        }
-      }
     },
     [forecastSummaryList, salesOrdersList],
   );
@@ -288,24 +292,18 @@ export default function Home() {
       try {
         localStorage.setItem("mvst_salesOrdersList", JSON.stringify(nextSales));
         localStorage.setItem("mvst_forecastSummary", JSON.stringify(nextForecasts));
-        localStorage.setItem("mvst_state_updatedAt", JSON.stringify(updatedAt));
       } catch {
         // ignore
       }
+      setLocalStorageTimestamp(updatedAt);
       
       // Save to remote storage with updated timestamp
-      const saved = await saveSharedWaterfallState({
+      await saveSharedWaterfallState({
         salesOrdersList: nextSales,
         forecastSummaryList: nextForecasts,
         bomCosts,
         updatedAt,
       });
-      
-      // Save timestamp to localStorage for merge comparison
-      if (!saved) {
-        // If remote save failed, log error but keep local state
-        console.error("Failed to save deleted state to remote storage");
-      }
     },
     [bomCosts, forecastSummaryList, salesOrdersList],
   );
@@ -335,7 +333,6 @@ export default function Home() {
       // Find the current date from the label
       const currentDate = parseDateLabel(dateLabel);
       if (!currentDate) {
-        console.error("Could not parse date from label:", dateLabel);
         return;
       }
 
@@ -353,7 +350,7 @@ export default function Home() {
   }, [handleDeleteByDate]);
 
   const handleDateSelect = useCallback(
-    (newDate: Date) => {
+    async (newDate: Date) => {
       if (!editingDateLabel) return;
 
       const months = buildMonthsWindow(newDate);
@@ -406,24 +403,17 @@ export default function Home() {
       try {
         localStorage.setItem("mvst_salesOrdersList", JSON.stringify(nextSales));
         localStorage.setItem("mvst_forecastSummary", JSON.stringify(nextForecasts));
-        localStorage.setItem("mvst_state_updatedAt", JSON.stringify(updatedAt));
       } catch {
         // ignore
       }
+      setLocalStorageTimestamp(updatedAt);
       
       // Save with updated timestamp
-      const saved = saveSharedWaterfallState({
+      await saveSharedWaterfallState({
         salesOrdersList: nextSales,
         forecastSummaryList: nextForecasts,
         bomCosts,
         updatedAt,
-      });
-      
-      // Log if the save fails (timestamp already set optimistically)
-      saved.then((success) => {
-        if (!success) {
-          console.error("Failed to save updated date to remote storage");
-        }
       });
 
       setDatePickerOpen(false);
@@ -510,6 +500,7 @@ export default function Home() {
             <UploadControls
               onSalesOrdersUpload={handleSalesOrdersUpload}
               onForecastUpload={handleForecastUpload}
+              onCombinedUpload={handleCombinedUpload}
               editMode={editMode}
               onToggleEditMode={() => setEditMode((v) => !v)}
             />
