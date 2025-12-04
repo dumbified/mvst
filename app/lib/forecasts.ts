@@ -11,6 +11,7 @@ export type ForecastSummary = {
   uploadDateLabel: string;
   months: { key: string; label: string }[];
   totals: Record<PlatformKey, Record<string, number>>;
+  machineIds?: Record<PlatformKey, Record<string, string[]>>; // platform -> monthKey -> machineIds[]
 };
 
 const sanitizeQuantity = (value: string) => {

@@ -10,8 +10,9 @@ import { uploadFileToSupabase } from "./lib/storage";
 import { buildMonthsWindow, parseDateLabel, sortPeriodsByUploadDate } from "./lib/dateUtils";
 import { useMonthFilter } from "./hooks/useMonthFilter";
 import { loadSharedWaterfallState, saveSharedWaterfallState } from "./lib/stateStorage";
-import { DEFAULT_BOM_COSTS } from "./lib/constants";
+import { DEFAULT_BOM_COSTS, PLATFORM_LABELS } from "./lib/constants";
 import { getLocalStorageTimestamp, setLocalStorageTimestamp } from "./lib/localStorageUtils";
+import { fetchMachineIdData, buildMachineIdMap, convertMachineIdMapToRecord } from "./lib/machineIds";
 
 export default function Home() {
   const [salesOrdersList, setSalesOrdersList] = useState<SalesOrderSummary[]>([]);
@@ -187,7 +188,7 @@ export default function Home() {
           setSalesOrdersList(nextSales);
           persistSharedState(nextSales, forecastSummaryList);
         }
-      } catch (error) {
+      } catch {
         // Failed to process Sales Orders CSV
       }
     },
@@ -202,11 +203,22 @@ export default function Home() {
         const dateToUse = uploadDate ?? new Date();
         const summary = parseForecastCsv(csvText, dateToUse);
         if (summary) {
+          // Fetch machine IDs for this forecast upload
+          try {
+            const machineIdData = await fetchMachineIdData();
+            if (machineIdData.length > 0) {
+              const { platformMonthMap } = buildMachineIdMap(machineIdData, summary.months);
+              summary.machineIds = convertMachineIdMapToRecord(platformMonthMap, PLATFORM_LABELS, summary.months);
+            }
+          } catch {
+            // Failed to fetch machine IDs, continue without them
+          }
+          
           const nextForecasts = sortPeriodsByUploadDate([...forecastSummaryList, summary]);
           setForecastSummaryList(nextForecasts);
           persistSharedState(salesOrdersList, nextForecasts);
         }
-      } catch (error) {
+      } catch {
         // Failed to process Forecast CSV
       }
     },
@@ -234,6 +246,19 @@ export default function Home() {
         const soSummary = parseSalesOrdersCsv(soText, sharedUploadDate);
         const forecastSummary = parseForecastCsv(forecastText, sharedUploadDate);
         
+        // Fetch machine IDs for forecast if it exists
+        if (forecastSummary) {
+          try {
+            const machineIdData = await fetchMachineIdData();
+            if (machineIdData.length > 0) {
+              const { platformMonthMap } = buildMachineIdMap(machineIdData, forecastSummary.months);
+              forecastSummary.machineIds = convertMachineIdMapToRecord(platformMonthMap, PLATFORM_LABELS, forecastSummary.months);
+            }
+          } catch {
+            // Failed to fetch machine IDs, continue without them
+          }
+        }
+        
         // Update both states together
         if (soSummary || forecastSummary) {
           const nextSales = soSummary 
@@ -247,7 +272,7 @@ export default function Home() {
           setForecastSummaryList(nextForecasts);
           persistSharedState(nextSales, nextForecasts);
         }
-      } catch (error) {
+      } catch {
         // Failed to process combined upload
       }
     },

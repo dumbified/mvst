@@ -34,11 +34,6 @@ const addMonthsToKey = (key: string, monthsToAdd: number) => {
   return monthKeyFromDate(date);
 };
 
-const compareMonthKeys = (a: string, b: string) => {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-};
-
 const expandMonthRange = (startKey: string, endKey: string) => {
   const [startYear, startMonth] = startKey.split("-").map(Number);
   const [endYear, endMonth] = endKey.split("-").map(Number);

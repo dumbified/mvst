@@ -48,7 +48,15 @@ export default function UploadControls({
   const controlsRef = useRef<HTMLDivElement>(null);
 
   const canSave = useMemo(() => {
-    return Object.entries(files).some(([key, file]) => {
+    // Require both files to be uploaded
+    const hasSalesOrders = !!files.salesOrders;
+    const hasForecast = !!files.forecast;
+    if (!hasSalesOrders || !hasForecast) {
+      return false;
+    }
+    
+    // Check if all files with warnings are confirmed
+    return Object.entries(files).every(([key, file]) => {
       if (!file) return false;
       const warning = warnings[key as UploadKey];
       if (warning) {

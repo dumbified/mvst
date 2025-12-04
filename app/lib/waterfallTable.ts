@@ -5,7 +5,6 @@ import {
 } from "./salesOrders";
 import { PLATFORM_LABELS, PlatformKey } from "./constants";
 import { ForecastSummary } from "./forecasts";
-import { PlatformMonthMachineIdMap, getMachineIdsForPlatformAndMonth } from "./machineIds";
 
 export type MonthColumn = { key: string; label: string };
 
@@ -40,12 +39,6 @@ type MergeCellSetting = {
   col: number;
   rowspan: number;
   colspan: number;
-};
-
-type CellMetaClass = {
-  row: number;
-  col: number;
-  className: string;
 };
 
 export function computeMonths(
@@ -319,7 +312,6 @@ type CellCommentsArgs = {
   visiblePlatforms: PlatformKey[];
   months: MonthColumn[];
   showTotals: boolean;
-  platformMonthMachineIdMap?: PlatformMonthMachineIdMap;
 };
 
 export function buildCellComments({
@@ -328,7 +320,6 @@ export function buildCellComments({
   visiblePlatforms,
   months,
   showTotals,
-  platformMonthMachineIdMap,
 }: CellCommentsArgs) {
   if (salesOrdersList.length === 0) return [];
   const comments: { row: number; col: number; comment: { value: string } }[] = [];
@@ -367,16 +358,10 @@ export function buildCellComments({
         }
 
         // Add Forecast comments (machine IDs = job numbers)
-        // This is for Forecast only, ignore SO
+        // ONLY use stored machine IDs from forecast data - don't use current map for historical data
         const forecastValue = platformForecast[month.key];
-        if (forecastValue && Number(forecastValue) > 0 && platformMonthMachineIdMap) {
-          // Get machine IDs (job numbers) for this platform and month
-          const machineIds = getMachineIdsForPlatformAndMonth(
-            platformMonthMachineIdMap,
-            platform,
-            month.key
-          );
-
+        if (forecastValue && Number(forecastValue) > 0 && periodForecast?.machineIds?.[platform]?.[month.key]) {
+          const machineIds = periodForecast.machineIds[platform][month.key];
           if (machineIds.length > 0) {
             const forecastColIndex = colIndex + 1; // Forecast column is next to SO column
             const machineIdList = machineIds.join("\n");

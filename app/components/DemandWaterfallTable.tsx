@@ -68,7 +68,7 @@ export default function DemandWaterfallTable({
     PLATFORM_OPTIONS.forEach((p) => (obj[p] = String(resolvedBomCosts[p] ?? 0)));
     return obj;
   });
-  const [platformMonthMachineIdMap, setPlatformMonthMachineIdMap] = useState<PlatformMonthMachineIdMap | undefined>(undefined);
+  const [, setPlatformMonthMachineIdMap] = useState<PlatformMonthMachineIdMap | undefined>(undefined);
 
   // Merge all months from uploads and forecasts
   const months = useMemo<MonthColumn[]>(
@@ -88,7 +88,7 @@ export default function DemandWaterfallTable({
           const { platformMonthMap } = buildMachineIdMap(machineIdData, months);
           setPlatformMonthMachineIdMap(platformMonthMap);
         }
-      } catch (error) {
+      } catch {
         // Failed to load machine IDs
       }
     };
@@ -200,9 +200,8 @@ export default function DemandWaterfallTable({
         visiblePlatforms,
         months,
         showTotals,
-        platformMonthMachineIdMap,
       }),
-    [months, salesOrdersList, forecastSummaryList, showTotals, visiblePlatforms, platformMonthMachineIdMap],
+    [months, salesOrdersList, forecastSummaryList, showTotals, visiblePlatforms],
   );
 
   // Convert comments array to a Map for quick lookup
@@ -226,7 +225,7 @@ export default function DemandWaterfallTable({
       const [row, col] = key.split(',').map(Number);
       try {
         hot.setCellMeta(row, col, 'comment', comment);
-      } catch (error) {
+      } catch {
         // Error setting comment
       }
     });
@@ -312,7 +311,7 @@ export default function DemandWaterfallTable({
                   }
                 }
               }
-            } catch (e) {
+            } catch {
               // Ignore errors for cells that don't exist
             }
           }
@@ -549,7 +548,7 @@ export default function DemandWaterfallTable({
           --ht-comments-indicator-color:rgb(255, 0, 0) !important; /* blue color */
         }
       `}</style>
-      <div className="bg-white" style={{ height: 600, width: "100%" }}>
+      <div className="bg-white" style={{ height: 'auto', width: "100%" }}>
         <HotTable
           ref={hotTableRef}
           data={data}
@@ -559,7 +558,7 @@ export default function DemandWaterfallTable({
           colWidths={colWidths}
           fixedColumnsStart={2}
           rowHeights={24}
-          height={600}
+          height={690}
           stretchH="all"
           className="hot-waterfall ht-theme-main"
           licenseKey="non-commercial-and-evaluation"

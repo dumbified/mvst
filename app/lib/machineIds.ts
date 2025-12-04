@@ -1,4 +1,3 @@
-import { formatMonthLabel } from './salesOrders';
 import { PlatformKey, PART_NUMBER_TO_PLATFORM } from './constants';
 
 export type MachineIdData = {
@@ -23,7 +22,7 @@ export async function fetchMachineIdData(): Promise<MachineIdData[]> {
     
     const result = await response.json();
     return result.data || [];
-  } catch (error) {
+  } catch {
     return [];
   }
 }
@@ -115,5 +114,28 @@ export function getMachineIdsForPlatformAndMonth(
   const key = `${platform}|${monthKey}`;
   const machineIdSet = platformMonthMap.get(key);
   return machineIdSet ? Array.from(machineIdSet) : [];
+}
+
+/**
+ * Converts PlatformMonthMachineIdMap to a Record format for storage in ForecastSummary
+ */
+export function convertMachineIdMapToRecord(
+  platformMonthMap: PlatformMonthMachineIdMap,
+  platforms: readonly PlatformKey[],
+  months: { key: string; label: string }[]
+): Record<PlatformKey, Record<string, string[]>> {
+  const result: Record<PlatformKey, Record<string, string[]>> = {} as Record<PlatformKey, Record<string, string[]>>;
+  
+  platforms.forEach((platform) => {
+    result[platform] = {};
+    months.forEach((month) => {
+      const machineIds = getMachineIdsForPlatformAndMonth(platformMonthMap, platform, month.key);
+      if (machineIds.length > 0) {
+        result[platform][month.key] = machineIds;
+      }
+    });
+  });
+  
+  return result;
 }
 
