@@ -27,9 +27,10 @@ export async function detectCsvFileType(file: File): Promise<CsvFileType> {
     const headers = parseDelimitedLine(headerLine, delimiter);
     const normalizedHeaders = headers.map(normalizeHeader);
 
-    // Sales Orders CSV should have: orderpart, shipby, orderqty
-    const hasOrderPart = normalizedHeaders.includes('orderpart');
-    const hasShipBy = normalizedHeaders.includes('shipby');
+    // Sales Orders CSV should have: part# (or orderpart), relshipbydate (or shipby), orderqty
+    // Support both old and new column name formats
+    const hasOrderPart = normalizedHeaders.includes('part#') || normalizedHeaders.includes('orderpart');
+    const hasShipBy = normalizedHeaders.includes('relshipbydate') || normalizedHeaders.includes('shipby');
     const hasOrderQty = normalizedHeaders.includes('orderqty');
 
     // Forecast CSV should have: part#, forecastdate, forecastqty

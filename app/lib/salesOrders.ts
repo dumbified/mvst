@@ -5,6 +5,8 @@ export type SalesOrderBucket = {
   jobNumbers: string[];
   shipped: number;
   open: number;
+  // Track per-job status so we can detect shipped jobs even if they drop out next month
+  jobStatus?: Record<string, "shipped" | "open" | "void" | "other">;
 };
 
 export type SalesOrderSummary = {
@@ -119,6 +121,7 @@ const getOrCreateBucket = (
       jobNumbers: [],
       shipped: 0,
       open: 0,
+      jobStatus: {},
     };
   }
   return totals[platform][monthKey];
@@ -176,11 +179,9 @@ export const parseSalesOrdersCsv = (
     if (!platform) continue;
 
     // Filter out void status if status column exists
-    if (statusIndex !== -1) {
-      const status = (cells[statusIndex] ?? "").trim().toLowerCase();
-      if (status === "void") {
+    const rawStatus = statusIndex !== -1 ? (cells[statusIndex] ?? "").trim().toLowerCase() : "";
+    if (rawStatus === "void") {
         continue;
-      }
     }
 
     const shipByDate = parseShipByDate(cells[shipByIndex] ?? "");
@@ -198,10 +199,9 @@ export const parseSalesOrdersCsv = (
 
     // Track status breakdown if status column exists
     if (statusIndex !== -1) {
-      const status = (cells[statusIndex] ?? "").trim().toLowerCase();
-      if (status === "shipped") {
+      if (rawStatus === "shipped") {
         bucket.shipped += quantity;
-      } else if (status === "open") {
+      } else if (rawStatus === "open") {
         bucket.open += quantity;
       }
     }
@@ -210,6 +210,18 @@ export const parseSalesOrdersCsv = (
       const jobNumber = (cells[jobNumberIndex] ?? "").trim();
       if (jobNumber && !bucket.jobNumbers.includes(jobNumber)) {
         bucket.jobNumbers.push(jobNumber);
+      }
+      if (jobNumber) {
+        const normalizedStatus =
+          rawStatus === "shipped"
+            ? "shipped"
+            : rawStatus === "open"
+              ? "open"
+              : rawStatus === "void"
+                ? "void"
+                : "other";
+        if (!bucket.jobStatus) bucket.jobStatus = {};
+        bucket.jobStatus[jobNumber] = normalizedStatus;
       }
     }
   }
