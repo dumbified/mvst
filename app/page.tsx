@@ -57,7 +57,6 @@ export default function Home() {
 
   const {
     datePickerOpen,
-    editingDateLabel,
     editingDate,
     editingAnchor,
     handleDateEdit,
@@ -195,7 +194,7 @@ export default function Home() {
       setForecastSummaryList([]);
       setBomCosts(DEFAULT_BOM_COSTS);
     }
-  }, []);
+  }, [setSalesOrdersList, setForecastSummaryList, setBomCosts]);
 
   return (
     <main className="min-h-screen p-6 md:p-10 flex flex-col gap-6 bg-white">

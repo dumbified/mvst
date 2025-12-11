@@ -1,4 +1,3 @@
-import { UploadChanges } from "../lib/forecastAccuracy";
 import { PlatformKey } from "../lib/constants";
 
 export type ChartDataPoint = {
@@ -13,6 +12,7 @@ export type ChartDataPoint = {
   newOrdersJobs: string[];
   shippedJobs: string[];
   movedToLaterJobs: string[];
+  forecastLoadInsJobs: string[];
   [key: string]: string | number | string[]; // For platform-specific data
 };
 

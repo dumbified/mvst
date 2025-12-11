@@ -96,12 +96,6 @@ function compareSalesOrders(
     const [platform, monthKey] = key.split(":");
     const currentJobs = currentJobsByPlatformMonth.get(key) ?? new Set<string>();
     const prevBucket = prevBucketsByPlatformMonth.get(key);
-    const currentBucket = currentBucketsByPlatformMonth.get(key);
-    
-    // Calculate quantity delta for this bucket
-    const prevQty = prevBucket?.quantity ?? 0;
-    const currQty = currentBucket?.quantity ?? 0;
-    const qtyDelta = prevQty - currQty;
     
     // Track disappeared jobs
     const disappearedJobs: string[] = [];
@@ -248,7 +242,7 @@ function compareSalesOrders(
       // Check if this job appears in any previous month (moved from earlier month)
       let foundInPreviousUpload = false;
       
-      Object.entries(previous.totals[platform as PlatformKey] ?? {}).forEach(([prevMonthKey, prevBucket]) => {
+      Object.entries(previous.totals[platform as PlatformKey] ?? {}).forEach(([, prevBucket]) => {
         if (prevBucket.jobNumbers.includes(jobNumber)) {
           foundInPreviousUpload = true;
         }
@@ -317,11 +311,14 @@ function compareForecasts(
 
       if (delta > 0) {
         // Forecast increased - new load-in
+        // Get machine IDs (job numbers) for this platform/month from current forecast
+        const machineIds = current.machineIds?.[platform as PlatformKey]?.[monthKey] ?? [];
         changes.push({
           type: "forecast_load_in",
           platform: platform as PlatformKey,
           monthKey,
           quantity: delta,
+          jobNumbers: machineIds.length > 0 ? machineIds : undefined,
           uploadDateLabel: current.uploadDateLabel,
         });
       } else if (delta < 0) {
@@ -379,8 +376,9 @@ function compareForecasts(
 
 /**
  * Calculate changes for a single upload compared to the previous one
+ * (Internal use only - called by calculateAllUploadChanges)
  */
-export function calculateUploadChanges(
+function calculateUploadChanges(
   salesOrdersList: SalesOrderSummary[],
   forecastSummaryList: ForecastSummary[],
   uploadDateLabel: string,
@@ -463,7 +461,6 @@ export function calculateAllUploadChanges(
   if (results.length === 0) return [];
   
   // Keep first upload as baseline even if all zeros
-  const firstResult = results[0];
   const filtered = results.filter((changes, index) => {
     // Always keep the first upload (baseline)
     if (index === 0) return true;

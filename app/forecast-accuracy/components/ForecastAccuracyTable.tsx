@@ -45,7 +45,12 @@ export default function ForecastAccuracyTable({ data }: ForecastAccuracyTablePro
                   >
                     {row.movedToLater}
                   </td>
-                  <td className="px-3 py-2 border-t border-neutral-200 text-right">{row.forecastLoadIns}</td>
+                  <td
+                    className="px-3 py-2 border-t border-neutral-200 text-right"
+                    title={row.forecastLoadInsJobs.length ? row.forecastLoadInsJobs.join(", ") : undefined}
+                  >
+                    {row.forecastLoadIns}
+                  </td>
                   <td className="px-3 py-2 border-t border-neutral-200 text-right font-semibold">
                     {row.accuracy}%
                   </td>

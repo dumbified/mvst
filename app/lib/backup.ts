@@ -4,7 +4,6 @@ import { SharedWaterfallState } from "./stateStorage";
 const STATE_BUCKET = process.env.NEXT_PUBLIC_WATERFALL_STATE_BUCKET ?? "uploads";
 const STATE_PATH = "shared/waterfall-state.json";
 
-const STATE_BUCKET = process.env.NEXT_PUBLIC_WATERFALL_STATE_BUCKET ?? "uploads";
 const BACKUP_FOLDER = "backups";
 const BACKUP_RETENTION_WEEKS = 8; // Keep backups for 8 weeks (2 months)
 
@@ -98,9 +97,9 @@ export async function createBackup(): Promise<{ success: boolean; backupPath?: s
 }
 
 /**
- * List all backup files
+ * List all backup files (internal use only)
  */
-export async function listBackups(): Promise<string[]> {
+async function listBackups(): Promise<string[]> {
   try {
     const supabase = getSupabase();
     const { data, error } = await supabase.storage
@@ -185,50 +184,4 @@ export async function cleanupOldBackups(): Promise<{ deleted: number; error?: st
   }
 }
 
-/**
- * Restore state from a backup file
- */
-export async function restoreFromBackup(backupFileName: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const supabase = getSupabase();
-    const backupPath = `${BACKUP_FOLDER}/${backupFileName}`;
-
-    // Download backup file
-    const { data, error: downloadError } = await supabase.storage
-      .from(STATE_BUCKET)
-      .download(backupPath);
-
-    if (downloadError || !data) {
-      throw new Error(`Failed to download backup: ${downloadError?.message || "File not found"}`);
-    }
-
-    // Parse backup data
-    const text = await data.text();
-    const backupState: SharedWaterfallState = JSON.parse(text);
-
-    // Save as current state (this will overwrite the current state)
-    const blob = new Blob([JSON.stringify(backupState, null, 2)], { 
-      type: "application/json" 
-    });
-    
-    const { error: uploadError } = await supabase.storage
-      .from(STATE_BUCKET)
-      .upload(STATE_PATH, blob, { 
-        upsert: true, 
-        contentType: "application/json" 
-      });
-
-    if (uploadError) {
-      throw new Error(`Failed to restore backup state: ${uploadError.message}`);
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error("Restore failed:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    };
-  }
-}
 

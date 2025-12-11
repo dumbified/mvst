@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { SalesOrderSummary } from "../lib/salesOrders";
 import { ForecastSummary } from "../lib/forecasts";
 import { loadSharedWaterfallState } from "../lib/stateStorage";
@@ -62,9 +63,9 @@ export default function ForecastAccuracyPage() {
     <main className="min-h-screen p-6 md:p-10 flex flex-col gap-6 bg-white">
       <header className="space-y-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
         <h1 className="text-xl md:text-2xl font-semibold">Forecast Accuracy</h1>
-        <a href="/" className="underline text-blue-500">
+        <Link href="/" className="underline text-blue-500">
           ← Back to Waterfall
-        </a>
+        </Link>
       </header>
 
       <section className="space-y-6">

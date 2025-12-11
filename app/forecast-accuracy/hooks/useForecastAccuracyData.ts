@@ -70,6 +70,7 @@ export function useForecastAccuracyData(
         newOrdersJobs: collectJobs(scopedChanges, "new_order"),
         shippedJobs: collectJobs(scopedChanges, "shipped"),
         movedToLaterJobs: collectJobs(scopedChanges, "moved_to_later_month"),
+        forecastLoadInsJobs: collectJobs(scopedChanges, "forecast_load_in"),
         accuracy: Math.round(accuracy * 10) / 10, // Round to 1 decimal
       };
 
