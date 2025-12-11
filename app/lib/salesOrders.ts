@@ -131,6 +131,12 @@ export const parseSalesOrdersCsv = (
   csvText: string,
   uploadDate: Date
 ): SalesOrderSummary | null => {
+  // Drop very old data up front (keep from Jan 2025) and only keep recent horizon (6 months before upload)
+  const minDate = new Date(2025, 0, 1);
+  const sixMonthsAgo = new Date(uploadDate);
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const effectiveMinDate = sixMonthsAgo > minDate ? sixMonthsAgo : minDate;
+
   const trimmedText = csvText.trim();
   if (!trimmedText) {
     return null;
@@ -187,6 +193,9 @@ export const parseSalesOrdersCsv = (
     const shipByDate = parseShipByDate(cells[shipByIndex] ?? "");
     if (!shipByDate) continue;
 
+    // Skip records earlier than the effective cutoff to keep dataset small and relevant
+    if (shipByDate < effectiveMinDate) continue;
+
     const quantity = sanitizeQuantity(cells[orderQtyIndex] ?? "");
     if (!quantity) continue;
 
@@ -195,13 +204,13 @@ export const parseSalesOrdersCsv = (
     monthSet.add(monthKey);
 
     const bucket = getOrCreateBucket(totals, platform, monthKey);
-    bucket.quantity += quantity;
 
-    // Track status breakdown if status column exists
-    if (statusIndex !== -1) {
-      if (rawStatus === "shipped") {
-        bucket.shipped += quantity;
-      } else if (rawStatus === "open") {
+    // Only count open backlog in quantity. Shipped rows should not contribute to SO backlog.
+    if (rawStatus === "shipped") {
+      bucket.shipped += quantity;
+    } else {
+      bucket.quantity += quantity;
+      if (rawStatus === "open" || rawStatus === "") {
         bucket.open += quantity;
       }
     }

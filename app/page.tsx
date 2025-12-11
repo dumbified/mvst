@@ -1,153 +1,38 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import DemandWaterfallTable from "./components/DemandWaterfallTable";
 import UploadControls from "./components/UploadControls";
 import DatePickerDialog from "./components/DatePickerDialog";
-import { SalesOrderSummary, parseSalesOrdersCsv, formatFullDate } from "./lib/salesOrders";
-import { ForecastSummary, parseForecastCsv } from "./lib/forecasts";
-import { uploadFileToSupabase } from "./lib/storage";
-import { buildMonthsWindow, parseDateLabel, sortPeriodsByUploadDate } from "./lib/dateUtils";
 import { useMonthFilter } from "./hooks/useMonthFilter";
+import { useWaterfallState } from "./hooks/useWaterfallState";
+import { useWaterfallUploads } from "./hooks/useWaterfallUploads";
+import { useDateEditor } from "./hooks/useDateEditor";
+import { useClickOutside } from "./hooks/useClickOutside";
+import { SalesOrderSummary } from "./lib/salesOrders";
+import { ForecastSummary } from "./lib/forecasts";
 import { loadSharedWaterfallState, saveSharedWaterfallState } from "./lib/stateStorage";
-import { DEFAULT_BOM_COSTS, PLATFORM_LABELS } from "./lib/constants";
-import { getLocalStorageTimestamp, setLocalStorageTimestamp } from "./lib/localStorageUtils";
-import { fetchMachineIdData, buildMachineIdMap, convertMachineIdMapToRecord } from "./lib/machineIds";
+import { sortPeriodsByUploadDate } from "./lib/dateUtils";
+import { DEFAULT_BOM_COSTS } from "./lib/constants";
+import { setLocalStorageTimestamp } from "./lib/localStorageUtils";
 
 export default function Home() {
-  const [salesOrdersList, setSalesOrdersList] = useState<SalesOrderSummary[]>([]);
-  const [forecastSummaryList, setForecastSummaryList] = useState<ForecastSummary[]>([]);
-  const [bomCosts, setBomCosts] = useState<Record<string, number>>(DEFAULT_BOM_COSTS);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [editMode, setEditMode] = useState(false);
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const [editingDateLabel, setEditingDateLabel] = useState<string | null>(null);
-  const [editingDate, setEditingDate] = useState<Date | undefined>(undefined);
-  const [editingAnchor, setEditingAnchor] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
-  const bucketName = "uploads";
 
-  // Load saved data on mount (merge remote and local, prefer most complete)
-  useEffect(() => {
-    let cancelled = false;
-    const loadState = async () => {
-      // Load local storage first (faster, more reliable)
-      let localSales: SalesOrderSummary[] = [];
-      let localForecasts: ForecastSummary[] = [];
-      let localBomCosts: Record<string, number> | null = null;
-      
-      try {
-        const soJson = localStorage.getItem("mvst_salesOrdersList");
-        const fcJson = localStorage.getItem("mvst_forecastSummary");
-        const bomJson = localStorage.getItem("mvst_bom_costs");
-        if (soJson) {
-          const parsed = JSON.parse(soJson);
-          if (Array.isArray(parsed)) {
-            localSales = parsed;
-          }
-        }
-        if (fcJson) {
-          const parsed = JSON.parse(fcJson);
-          if (Array.isArray(parsed)) {
-            localForecasts = parsed;
-          } else if (parsed && typeof parsed === "object" && parsed.uploadDateLabel) {
-            localForecasts = [parsed];
-          }
-        }
-        if (bomJson) {
-          const parsed = JSON.parse(bomJson);
-          if (parsed && typeof parsed === "object") {
-            localBomCosts = parsed;
-          }
-        }
-      } catch {
-        // ignore storage errors
-      }
+  // Use custom hooks for state management
+  const {
+    salesOrdersList,
+    setSalesOrdersList,
+    forecastSummaryList,
+    setForecastSummaryList,
+    bomCosts,
+    setBomCosts,
+    persistSharedState,
+  } = useWaterfallState();
 
-      // Try to load remote state
-      const remote = await loadSharedWaterfallState();
-      if (cancelled) return;
-
-      // Merge remote and local data, deduplicating by uploadDateLabel
-      // Prefer remote data if it exists and has a valid updatedAt timestamp
-      const mergeLists = <T extends { uploadDateLabel: string }>(
-        local: T[],
-        remote: T[] | undefined,
-        remoteUpdatedAt?: string
-      ): T[] => {
-        if (!remote || remote.length === 0) return local;
-        
-        const localUpdatedAt = getLocalStorageTimestamp();
-        const preferRemote = remoteUpdatedAt && (!localUpdatedAt || remoteUpdatedAt > localUpdatedAt);
-        
-        if (preferRemote) {
-          // If remote is newer, use ONLY remote data (don't merge in stale local data)
-          // This ensures deletions and updates in remote are respected
-          return [...remote];
-        } else {
-          // If local is newer or equal, trust local entirely (remote may contain stale data)
-          return [...local];
-        }
-      };
-
-      const mergedSales = mergeLists(localSales, remote?.salesOrdersList, remote?.updatedAt);
-      const mergedForecasts = mergeLists(localForecasts, remote?.forecastSummaryList, remote?.updatedAt);
-
-      // Merge BOM costs (prefer newer timestamp)
-      let mergedBomCosts: Record<string, number> = { ...DEFAULT_BOM_COSTS };
-      if (localBomCosts) {
-        mergedBomCosts = { ...mergedBomCosts, ...localBomCosts };
-      }
-      if (remote?.bomCosts) {
-        const localUpdatedAt = getLocalStorageTimestamp();
-        const preferRemote = remote.updatedAt && (!localUpdatedAt || remote.updatedAt > localUpdatedAt);
-        if (preferRemote) {
-          mergedBomCosts = { ...DEFAULT_BOM_COSTS, ...remote.bomCosts };
-        }
-        // If local is newer, keep mergedBomCosts as-is (remote may be stale)
-      }
-
-      // Sort by upload date
-      const sortedSales = sortPeriodsByUploadDate(mergedSales);
-      const sortedForecasts = sortPeriodsByUploadDate(mergedForecasts);
-
-      setSalesOrdersList(sortedSales);
-      setForecastSummaryList(sortedForecasts);
-      setBomCosts(mergedBomCosts);
-
-      // If we merged data and it's different from what we loaded, save it back
-      if (remote && (mergedSales.length !== localSales.length || mergedForecasts.length !== localForecasts.length || JSON.stringify(mergedBomCosts) !== JSON.stringify(localBomCosts || DEFAULT_BOM_COSTS))) {
-        saveSharedWaterfallState({
-          salesOrdersList: sortedSales,
-          forecastSummaryList: sortedForecasts,
-          bomCosts: mergedBomCosts,
-          updatedAt: new Date().toISOString(),
-        });
-      }
-    };
-    loadState();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Persist data whenever it changes
-  useEffect(() => {
-    try {
-      localStorage.setItem("mvst_salesOrdersList", JSON.stringify(salesOrdersList));
-    } catch {
-      // ignore
-    }
-  }, [salesOrdersList]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("mvst_forecastSummary", JSON.stringify(forecastSummaryList));
-    } catch {
-      // ignore
-    }
-  }, [forecastSummaryList]);
-
+  // Use custom hooks
   const {
     fromMonth,
     toMonth,
@@ -162,122 +47,33 @@ export default function Home() {
     clearFilters,
   } = useMonthFilter<SalesOrderSummary, ForecastSummary>(salesOrdersList, forecastSummaryList);
 
-  const persistSharedState = useCallback(
-    async (nextSales: SalesOrderSummary[], nextForecasts: ForecastSummary[], nextBomCosts?: Record<string, number>) => {
-      const updatedAt = new Date().toISOString();
-      setLocalStorageTimestamp(updatedAt);
-      await saveSharedWaterfallState({
-        salesOrdersList: nextSales,
-        forecastSummaryList: nextForecasts,
-        bomCosts: nextBomCosts || bomCosts,
-        updatedAt,
-      });
-    },
-    [bomCosts],
-  );
+  const { handleSalesOrdersUpload, handleForecastUpload, handleCombinedUpload } = useWaterfallUploads({
+    salesOrdersList,
+    forecastSummaryList,
+    setSalesOrdersList,
+    setForecastSummaryList,
+    persistSharedState,
+  });
 
-  const handleSalesOrdersUpload = useCallback(
-    async (file: File, uploadDate?: Date) => {
-      try {
-        await uploadFileToSupabase(bucketName, file, "sales-orders");
-        const csvText = await file.text();
-        const dateToUse = uploadDate ?? new Date();
-        const summary = parseSalesOrdersCsv(csvText, dateToUse);
-        if (summary) {
-          const nextSales = sortPeriodsByUploadDate([...salesOrdersList, summary]);
-          setSalesOrdersList(nextSales);
-          persistSharedState(nextSales, forecastSummaryList);
-        }
-      } catch {
-        // Failed to process Sales Orders CSV
-      }
-    },
-    [bucketName, forecastSummaryList, persistSharedState, salesOrdersList],
-  );
+  const {
+    datePickerOpen,
+    editingDateLabel,
+    editingDate,
+    editingAnchor,
+    handleDateEdit,
+    handleDateSelect,
+    closeDatePicker,
+    setDatePickerOpen,
+  } = useDateEditor({
+    salesOrdersList,
+    forecastSummaryList,
+    bomCosts,
+    setSalesOrdersList,
+    setForecastSummaryList,
+  });
 
-  const handleForecastUpload = useCallback(
-    async (file: File, uploadDate?: Date) => {
-      try {
-        await uploadFileToSupabase(bucketName, file, "forecasts");
-        const csvText = await file.text();
-        const dateToUse = uploadDate ?? new Date();
-        const summary = parseForecastCsv(csvText, dateToUse);
-        if (summary) {
-          // Fetch machine IDs for this forecast upload
-          try {
-            const machineIdData = await fetchMachineIdData();
-            if (machineIdData.length > 0) {
-              const { platformMonthMap } = buildMachineIdMap(machineIdData, summary.months);
-              summary.machineIds = convertMachineIdMapToRecord(platformMonthMap, PLATFORM_LABELS, summary.months);
-            }
-          } catch {
-            // Failed to fetch machine IDs, continue without them
-          }
-          
-          const nextForecasts = sortPeriodsByUploadDate([...forecastSummaryList, summary]);
-          setForecastSummaryList(nextForecasts);
-          persistSharedState(salesOrdersList, nextForecasts);
-        }
-      } catch {
-        // Failed to process Forecast CSV
-      }
-    },
-    [bucketName, forecastSummaryList, persistSharedState, salesOrdersList],
-  );
-
-  // Combined handler for when both files are uploaded together
-  const handleCombinedUpload = useCallback(
-    async (soFile: File, forecastFile: File) => {
-      try {
-        const sharedUploadDate = new Date();
-        
-        // Upload both files
-        await Promise.all([
-          uploadFileToSupabase(bucketName, soFile, "sales-orders"),
-          uploadFileToSupabase(bucketName, forecastFile, "forecasts"),
-        ]);
-        
-        // Parse both files
-        const [soText, forecastText] = await Promise.all([
-          soFile.text(),
-          forecastFile.text(),
-        ]);
-        
-        const soSummary = parseSalesOrdersCsv(soText, sharedUploadDate);
-        const forecastSummary = parseForecastCsv(forecastText, sharedUploadDate);
-        
-        // Fetch machine IDs for forecast if it exists
-        if (forecastSummary) {
-          try {
-            const machineIdData = await fetchMachineIdData();
-            if (machineIdData.length > 0) {
-              const { platformMonthMap } = buildMachineIdMap(machineIdData, forecastSummary.months);
-              forecastSummary.machineIds = convertMachineIdMapToRecord(platformMonthMap, PLATFORM_LABELS, forecastSummary.months);
-            }
-          } catch {
-            // Failed to fetch machine IDs, continue without them
-          }
-        }
-        
-        // Update both states together
-        if (soSummary || forecastSummary) {
-          const nextSales = soSummary 
-            ? sortPeriodsByUploadDate([...salesOrdersList, soSummary])
-            : salesOrdersList;
-          const nextForecasts = forecastSummary
-            ? sortPeriodsByUploadDate([...forecastSummaryList, forecastSummary])
-            : forecastSummaryList;
-          
-          setSalesOrdersList(nextSales);
-          setForecastSummaryList(nextForecasts);
-          persistSharedState(nextSales, nextForecasts);
-        }
-      } catch {
-        // Failed to process combined upload
-      }
-    },
-    [bucketName, forecastSummaryList, persistSharedState, salesOrdersList],
-  );
+  // Handle click outside for filter menu
+  useClickOutside(filterMenuRef, () => setShowFilterMenu(false), showFilterMenu);
 
   const handleBomCostsChange = useCallback(
     async (newBomCosts: Record<string, number>) => {
@@ -300,7 +96,7 @@ export default function Home() {
         updatedAt,
       });
     },
-    [forecastSummaryList, salesOrdersList],
+    [forecastSummaryList, salesOrdersList, setBomCosts],
   );
 
   const handleDeleteByDate = useCallback(
@@ -330,124 +126,76 @@ export default function Home() {
         updatedAt,
       });
     },
-    [bomCosts, forecastSummaryList, salesOrdersList],
+    [bomCosts, forecastSummaryList, salesOrdersList, setForecastSummaryList, setSalesOrdersList],
   );
 
-  useEffect(() => {
-    if (!showFilterMenu) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (!filterMenuRef.current) return;
-      if (!filterMenuRef.current.contains(event.target as Node)) {
-        setShowFilterMenu(false);
-      }
+  const handleDateDelete = useCallback(
+    (dateLabel: string) => {
+      handleDeleteByDate(dateLabel);
+    },
+    [handleDeleteByDate]
+  );
+
+  const handleClearLocalStorage = useCallback(async () => {
+    localStorage.removeItem("mvst_salesOrdersList");
+    localStorage.removeItem("mvst_forecastSummary");
+    localStorage.removeItem("mvst_bom_costs");
+    localStorage.removeItem("mvst_state_updatedAt");
+    
+    // Log the results
+    const result = {
+      "mvst_salesOrdersList": localStorage.getItem("mvst_salesOrdersList"),
+      "mvst_forecastSummary": localStorage.getItem("mvst_forecastSummary"),
+      "mvst_bom_costs": localStorage.getItem("mvst_bom_costs"),
+      "mvst_state_updatedAt": localStorage.getItem("mvst_state_updatedAt"),
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showFilterMenu]);
-
-  const handleDateEdit = useCallback(
-    (dateLabel: string, anchor?: { top: number; left: number; width: number; height: number }) => {
-      if (datePickerOpen && editingDateLabel === dateLabel) {
-        setDatePickerOpen(false);
-        setEditingDateLabel(null);
-        setEditingDate(undefined);
-        setEditingAnchor(null);
-        return;
-      }
-
-      // Find the current date from the label
-      const currentDate = parseDateLabel(dateLabel);
-      if (!currentDate) {
-        return;
-      }
-
-      // Set up the date picker dialog
-      setEditingDateLabel(dateLabel);
-      setEditingDate(currentDate);
-      setEditingAnchor(anchor ?? null);
-      setDatePickerOpen(true);
-    },
-    [datePickerOpen, editingDateLabel]
-  );
-
-  const handleDateDelete = useCallback((dateLabel: string) => {
-    handleDeleteByDate(dateLabel);
-  }, [handleDeleteByDate]);
-
-  const handleDateSelect = useCallback(
-    async (newDate: Date) => {
-      if (!editingDateLabel) return;
-
-      const months = buildMonthsWindow(newDate);
-      const newDateLabel = formatFullDate(newDate);
-
-      // If the new date is the same as the old date, do nothing
-      if (newDateLabel === editingDateLabel) {
-        setDatePickerOpen(false);
-        setEditingDateLabel(null);
-        setEditingDate(undefined);
-        setEditingAnchor(null);
-        return;
-      }
-
-      // Update forecasts: change the date label and remove any existing record with the new date
-      const nextForecasts = sortPeriodsByUploadDate(
-        forecastSummaryList
-          .filter((fc) => fc.uploadDateLabel !== newDateLabel) // Remove any existing record with new date
-          .map((fc) =>
-            fc.uploadDateLabel === editingDateLabel
-              ? {
-                  ...fc,
-                  uploadDateLabel: newDateLabel,
-                  months,
-                }
-              : fc,
-          ),
-      );
-
-      // Update sales orders: change the date label and remove any existing record with the new date
-      const nextSales = sortPeriodsByUploadDate(
-        salesOrdersList
-          .filter((so) => so.uploadDateLabel !== newDateLabel) // Remove any existing record with new date
-          .map((so) =>
-            so.uploadDateLabel === editingDateLabel
-              ? {
-                  ...so,
-                  uploadDateLabel: newDateLabel,
-                  months,
-                }
-              : so,
-          ),
-      );
-
-      setForecastSummaryList(nextForecasts);
-      setSalesOrdersList(nextSales);
-      const updatedAt = new Date().toISOString();
+    console.log("LocalStorage cleared. Remaining values:", result);
+    
+    // Load data from remote storage
+    try {
+      const remote = await loadSharedWaterfallState();
       
-      // Update localStorage immediately to prevent stale data on reload
-      try {
-        localStorage.setItem("mvst_salesOrdersList", JSON.stringify(nextSales));
-        localStorage.setItem("mvst_forecastSummary", JSON.stringify(nextForecasts));
-      } catch {
-        // ignore
+      if (remote) {
+        const sortedSales = sortPeriodsByUploadDate(remote.salesOrdersList || []);
+        const sortedForecasts = sortPeriodsByUploadDate(remote.forecastSummaryList || []);
+        const remoteBomCosts = remote.bomCosts || DEFAULT_BOM_COSTS;
+        
+        setSalesOrdersList(sortedSales);
+        setForecastSummaryList(sortedForecasts);
+        setBomCosts(remoteBomCosts);
+        
+        // Save to localStorage for future use
+        try {
+          localStorage.setItem("mvst_salesOrdersList", JSON.stringify(sortedSales));
+          localStorage.setItem("mvst_forecastSummary", JSON.stringify(sortedForecasts));
+          localStorage.setItem("mvst_bom_costs", JSON.stringify(remoteBomCosts));
+          if (remote.updatedAt) {
+            setLocalStorageTimestamp(remote.updatedAt);
+          }
+        } catch {
+          // ignore storage errors
+        }
+        
+        console.log("Data reloaded from remote storage:", {
+          salesOrders: sortedSales.length,
+          forecasts: sortedForecasts.length,
+          bomCosts: remoteBomCosts,
+        });
+      } else {
+        // No remote data, reset to empty/default values
+        setSalesOrdersList([]);
+        setForecastSummaryList([]);
+        setBomCosts(DEFAULT_BOM_COSTS);
+        console.log("No remote data found. State reset to empty.");
       }
-      setLocalStorageTimestamp(updatedAt);
-      
-      // Save with updated timestamp
-      await saveSharedWaterfallState({
-        salesOrdersList: nextSales,
-        forecastSummaryList: nextForecasts,
-        bomCosts,
-        updatedAt,
-      });
-
-      setDatePickerOpen(false);
-      setEditingDateLabel(null);
-      setEditingDate(undefined);
-      setEditingAnchor(null);
-    },
-    [bomCosts, editingDateLabel, forecastSummaryList, salesOrdersList],
-  );
+    } catch (error) {
+      console.error("Failed to reload data from remote storage:", error);
+      // Reset to empty/default values on error
+      setSalesOrdersList([]);
+      setForecastSummaryList([]);
+      setBomCosts(DEFAULT_BOM_COSTS);
+    }
+  }, []);
 
   return (
     <main className="min-h-screen p-6 md:p-10 flex flex-col gap-6 bg-white">
@@ -521,7 +269,7 @@ export default function Home() {
               </div>
             ) : null}
           </div>
-          <div className="ml-auto flex items-end justify-end gap-3 flex-wrap">
+          <div className="ml-auto flex items-center gap-2 flex-wrap">
             <UploadControls
               onSalesOrdersUpload={handleSalesOrdersUpload}
               onForecastUpload={handleForecastUpload}
@@ -529,6 +277,27 @@ export default function Home() {
               editMode={editMode}
               onToggleEditMode={() => setEditMode((v) => !v)}
             />
+            <button
+              type="button"
+              onClick={handleClearLocalStorage}
+              className="inline-flex items-center rounded-md border border-red-500 px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+              title="Refresh data from remote storage"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+                className="w-4 h-4"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                />
+              </svg>
+            </button>
           </div>
         </div>
         <div className="overflow-auto rounded-lg border border-neutral-200/60 bg-white">
@@ -548,10 +317,7 @@ export default function Home() {
         onOpenChange={(open) => {
           setDatePickerOpen(open);
           if (!open) {
-            // Reset editing state when dialog closes
-            setEditingDateLabel(null);
-            setEditingDate(undefined);
-            setEditingAnchor(null);
+            closeDatePicker();
           }
         }}
         date={editingDate}

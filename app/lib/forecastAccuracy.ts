@@ -259,20 +259,33 @@ function compareSalesOrders(
 
       if (!foundInPreviousUpload && isSequentialNew) {
         // Job ID not present in previous upload AND sequence is above any previous job:
-        // treat as a true new order after the baseline/historical set.
-        // Estimate quantity: use average quantity per job in the current bucket
+        // treat as a true new order unless it arrives already shipped.
         const avgQtyPerJob = currentBucket && currentBucket.jobNumbers.length > 0
           ? currentBucket.quantity / currentBucket.jobNumbers.length
           : 1;
-        
-        changes.push({
-          type: "new_order",
-          platform: platform as PlatformKey,
-          monthKey,
-          quantity: Math.round(avgQtyPerJob),
-          jobNumbers: [jobNumber],
-          uploadDateLabel: current.uploadDateLabel,
-        });
+
+        const currentStatus = currentBucket?.jobStatus?.[jobNumber];
+        if (currentStatus === "shipped") {
+          changes.push({
+            type: "shipped",
+            platform: platform as PlatformKey,
+            monthKey,
+            quantity: Math.round(avgQtyPerJob),
+            jobNumbers: [jobNumber],
+            uploadDateLabel: current.uploadDateLabel,
+          });
+        } else if (currentStatus === "void") {
+          // ignore void arrivals
+        } else {
+          changes.push({
+            type: "new_order",
+            platform: platform as PlatformKey,
+            monthKey,
+            quantity: Math.round(avgQtyPerJob),
+            jobNumbers: [jobNumber],
+            uploadDateLabel: current.uploadDateLabel,
+          });
+        }
       }
       // If found in previous upload but different month, it's already handled in the "disappeared" logic above
     });
