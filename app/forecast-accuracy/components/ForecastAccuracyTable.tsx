@@ -16,10 +16,10 @@ export default function ForecastAccuracyTable({ data }: ForecastAccuracyTablePro
             <thead>
               <tr className="bg-neutral-50 text-neutral-700">
                 <th className="border-b border-neutral-200 px-3 py-2 text-left">Upload Date</th>
-                <th className="border-b border-neutral-200 px-3 py-2 text-right">New Orders</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Shipped</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Delayed</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">New Forecast</th>
+                <th className="border-b border-neutral-200 px-3 py-2 text-right">Fcast → SO</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Accuracy %</th>
               </tr>
             </thead>
@@ -27,12 +27,6 @@ export default function ForecastAccuracyTable({ data }: ForecastAccuracyTablePro
               {data.map((row, idx) => (
                 <tr key={idx} className="odd:bg-white even:bg-neutral-50 hover:bg-neutral-100/70">
                   <td className="px-3 py-2 border-t border-neutral-200">{row.uploadDate}</td>
-                  <td
-                    className="px-3 py-2 border-t border-neutral-200 text-right"
-                    title={row.newOrdersJobs.length ? row.newOrdersJobs.join(", ") : undefined}
-                  >
-                    {row.newOrders}
-                  </td>
                   <td
                     className="px-3 py-2 border-t border-neutral-200 text-right"
                     title={row.shippedJobs.length ? row.shippedJobs.join(", ") : undefined}
@@ -50,6 +44,12 @@ export default function ForecastAccuracyTable({ data }: ForecastAccuracyTablePro
                     title={row.forecastLoadInsJobs.length ? row.forecastLoadInsJobs.join(", ") : undefined}
                   >
                     {row.forecastLoadIns}
+                  </td>
+                  <td
+                    className="px-3 py-2 border-t border-neutral-200 text-right"
+                    title={row.forecastConversionsJobs.length ? row.forecastConversionsJobs.join(", ") : undefined}
+                  >
+                    {row.forecastConversions}
                   </td>
                   <td className="px-3 py-2 border-t border-neutral-200 text-right font-semibold">
                     {row.accuracy}%

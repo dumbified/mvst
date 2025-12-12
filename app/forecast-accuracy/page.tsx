@@ -22,7 +22,7 @@ export default function ForecastAccuracyPage() {
   const [chartType, setChartType] = useState<ChartType>("combined");
   const [visibleSeries, setVisibleSeries] = useState<VisibleSeries>({
     forecastLoadIns: true,
-    newOrders: true,
+    forecastConversions: true,
     shipped: true,
     movedToLater: true,
   });

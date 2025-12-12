@@ -40,11 +40,11 @@ export default function CombinedChart({ data, visibleSeries }: CombinedChartProp
             {visibleSeries.forecastLoadIns && (
               <Bar yAxisId="left" dataKey="forecastLoadIns" fill="#8884d8" name="New Forecast" />
             )}
-            {visibleSeries.newOrders && (
-              <Bar yAxisId="left" dataKey="newOrders" fill="#ffc658" name="New Orders" />
+            {visibleSeries.forecastConversions && (
+              <Bar yAxisId="left" dataKey="forecastConversions" fill="#82ca9d" name="Fcast → SO" />
             )}
             {visibleSeries.shipped && (
-              <Bar yAxisId="left" dataKey="shipped" fill="#ff7300" name="Shipped" />
+              <Bar yAxisId="left" dataKey="shipped" fill="#ffc658" name="Shipped" />
             )}
             {visibleSeries.movedToLater && (
               <Bar yAxisId="left" dataKey="movedToLater" fill="#e63946" name="Delayed" />

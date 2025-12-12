@@ -47,7 +47,6 @@ export function useForecastAccuracyData(
 
       // Calculate quantities based on scope
       const sums = {
-        newOrders: scopedChanges.filter((c) => c.type === "new_order").reduce((sum, c) => sum + c.quantity, 0),
         shipped: scopedChanges.filter((c) => c.type === "shipped").reduce((sum, c) => sum + c.quantity, 0),
         movedToLater: scopedChanges.filter((c) => c.type === "moved_to_later_month").reduce((sum, c) => sum + c.quantity, 0),
         forecastLoadIns: scopedChanges.filter((c) => c.type === "forecast_load_in").reduce((sum, c) => sum + c.quantity, 0),
@@ -63,14 +62,14 @@ export function useForecastAccuracyData(
       const point: ChartDataPoint = {
         uploadDate: change.uploadDateLabel,
         uploadDateShort,
-        newOrders: sums.newOrders,
         shipped: sums.shipped,
         movedToLater: sums.movedToLater,
         forecastLoadIns: sums.forecastLoadIns,
-        newOrdersJobs: collectJobs(scopedChanges, "new_order"),
+        forecastConversions: sums.forecastConversions,
         shippedJobs: collectJobs(scopedChanges, "shipped"),
         movedToLaterJobs: collectJobs(scopedChanges, "moved_to_later_month"),
         forecastLoadInsJobs: collectJobs(scopedChanges, "forecast_load_in"),
+        forecastConversionsJobs: collectJobs(scopedChanges, "forecast_to_so_conversion"),
         accuracy: Math.round(accuracy * 10) / 10, // Round to 1 decimal
       };
 

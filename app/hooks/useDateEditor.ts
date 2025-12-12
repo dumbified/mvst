@@ -138,7 +138,6 @@ export function useDateEditor({
 
   return {
     datePickerOpen,
-    editingDateLabel,
     editingDate,
     editingAnchor,
     handleDateEdit,

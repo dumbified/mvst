@@ -118,7 +118,7 @@ export default function ForecastAccuracyControls({
             <div className="flex flex-col gap-2">
               {[
                 { key: "forecastLoadIns", label: "New Forecast" },
-                { key: "newOrders", label: "New Orders" },
+                { key: "forecastConversions", label: "Fcast → SO" },
                 { key: "shipped", label: "Shipped" },
                 { key: "movedToLater", label: "Delayed" },
               ].map(({ key, label }) => (

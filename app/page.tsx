@@ -130,7 +130,7 @@ export default function Home() {
 
   const handleDateDelete = useCallback(
     (dateLabel: string) => {
-      handleDeleteByDate(dateLabel);
+    handleDeleteByDate(dateLabel);
     },
     [handleDeleteByDate]
   );
@@ -279,7 +279,7 @@ export default function Home() {
             <button
               type="button"
               onClick={handleClearLocalStorage}
-              className="inline-flex items-center rounded-md border border-red-500 px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+              className="inline-flex items-center rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-medium text-neutral-600 bg-white hover:bg-neutral-50 transition-colors"
               title="Refresh data from remote storage"
             >
               <svg

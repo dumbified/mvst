@@ -23,7 +23,6 @@ export type UploadChanges = {
   uploadDateLabel: string;
   changes: ChangeRecord[];
   summary: {
-    newOrders: number;
     shipped: number;
     movedToLater: number;
     forecastLoadIns: number;
@@ -290,11 +289,12 @@ function compareSalesOrders(
 
 /**
  * Compare two Forecast uploads and track changes
+ * Forecast to SO conversion: Check if jobs from previous forecast appear in current Sales Orders
  */
 function compareForecasts(
   previous: ForecastSummary | null,
   current: ForecastSummary,
-  soChanges: ChangeRecord[],
+  currentSo: SalesOrderSummary | null,
 ): ChangeRecord[] {
   const changes: ChangeRecord[] = [];
 
@@ -303,7 +303,47 @@ function compareForecasts(
     return [];
   }
 
-  // Compare quantities per platform/month
+  // Build a set of all job numbers in current Sales Orders for quick lookup
+  const currentSoJobs = new Set<string>();
+  if (currentSo) {
+    Object.entries(currentSo.totals).forEach(([, monthBuckets]) => {
+      Object.entries(monthBuckets).forEach(([, bucket]) => {
+        bucket.jobNumbers.forEach((job) => currentSoJobs.add(job));
+      });
+    });
+  }
+
+  // Check for forecast conversions: jobs from previous forecast that appear in current SO
+  Object.entries(previous.totals).forEach(([platform, monthBuckets]) => {
+    Object.entries(monthBuckets).forEach(([monthKey, prevQty]) => {
+      if (prevQty === 0) return;
+
+      const prevMachineIds = previous.machineIds?.[platform as PlatformKey]?.[monthKey] ?? [];
+      if (prevMachineIds.length === 0) return;
+
+      // Find which jobs from previous forecast appear in current Sales Orders
+      const convertedJobs: string[] = [];
+      prevMachineIds.forEach((jobId) => {
+        if (currentSoJobs.has(jobId)) {
+          convertedJobs.push(jobId);
+        }
+      });
+
+      if (convertedJobs.length > 0) {
+        // These jobs converted from forecast to SO
+        changes.push({
+          type: "forecast_to_so_conversion",
+          platform: platform as PlatformKey,
+          monthKey,
+          quantity: convertedJobs.length, // Quantity matches number of jobs
+          jobNumbers: convertedJobs,
+          uploadDateLabel: current.uploadDateLabel,
+        });
+      }
+    });
+  });
+
+  // Compare quantities per platform/month for new forecast load-ins
   Object.entries(current.totals).forEach(([platform, monthBuckets]) => {
     Object.entries(monthBuckets).forEach(([monthKey, currentQty]) => {
       const prevQty = previous.totals[platform as PlatformKey]?.[monthKey] ?? 0;
@@ -313,58 +353,17 @@ function compareForecasts(
         // Forecast increased - new load-in
         // Get machine IDs (job numbers) for this platform/month from current forecast
         const machineIds = current.machineIds?.[platform as PlatformKey]?.[monthKey] ?? [];
+        // Only include jobs that weren't in previous forecast
+        const prevMachineIds = previous.machineIds?.[platform as PlatformKey]?.[monthKey] ?? [];
+        const prevMachineIdsSet = new Set(prevMachineIds);
+        const newMachineIds = machineIds.filter((id) => !prevMachineIdsSet.has(id));
+        
         changes.push({
           type: "forecast_load_in",
           platform: platform as PlatformKey,
           monthKey,
           quantity: delta,
-          jobNumbers: machineIds.length > 0 ? machineIds : undefined,
-          uploadDateLabel: current.uploadDateLabel,
-        });
-      } else if (delta < 0) {
-        // Forecast decreased - likely converted to SO
-        // Try to match with SO changes in the same period
-        const matchingSoChange = soChanges.find(
-          (change) =>
-            change.platform === platform &&
-            change.monthKey === monthKey &&
-            (change.type === "new_order" || change.type === "forecast_to_so_conversion")
-        );
-
-        if (matchingSoChange) {
-          // Link the forecast decrease to SO increase
-          changes.push({
-            type: "forecast_to_so_conversion",
-            platform: platform as PlatformKey,
-            monthKey,
-            quantity: Math.abs(delta),
-            uploadDateLabel: current.uploadDateLabel,
-          });
-        } else {
-          // Still mark as conversion even if we can't match exactly
-          changes.push({
-            type: "forecast_to_so_conversion",
-            platform: platform as PlatformKey,
-            monthKey,
-            quantity: Math.abs(delta),
-            uploadDateLabel: current.uploadDateLabel,
-          });
-        }
-      }
-    });
-  });
-
-  // Also check for forecast decreases in previous that aren't in current
-  Object.entries(previous.totals).forEach(([platform, monthBuckets]) => {
-    Object.entries(monthBuckets).forEach(([monthKey, prevQty]) => {
-      const currentQty = current.totals[platform as PlatformKey]?.[monthKey] ?? 0;
-      if (prevQty > 0 && currentQty === 0) {
-        // Forecast completely removed - likely converted
-        changes.push({
-          type: "forecast_to_so_conversion",
-          platform: platform as PlatformKey,
-          monthKey,
-          quantity: prevQty,
+          jobNumbers: newMachineIds.length > 0 ? newMachineIds : (machineIds.length > 0 ? machineIds : undefined),
           uploadDateLabel: current.uploadDateLabel,
         });
       }
@@ -412,16 +411,15 @@ function calculateUploadChanges(
   // Calculate SO changes
   const soChanges = currentSo ? compareSalesOrders(previousSo, currentSo) : [];
 
-  // Calculate Forecast changes (needs SO changes for matching)
+  // Calculate Forecast changes (needs current SO to check for conversions)
   const forecastChanges = currentForecast
-    ? compareForecasts(previousForecast, currentForecast, soChanges)
+    ? compareForecasts(previousForecast, currentForecast, currentSo)
     : [];
 
   const allChanges = [...soChanges, ...forecastChanges];
 
   // Calculate summary
   const summary = {
-    newOrders: allChanges.filter((c) => c.type === "new_order").reduce((sum, c) => sum + c.quantity, 0),
     shipped: allChanges.filter((c) => c.type === "shipped").reduce((sum, c) => sum + c.quantity, 0),
     movedToLater: allChanges.filter((c) => c.type === "moved_to_later_month").reduce((sum, c) => sum + c.quantity, 0),
     forecastLoadIns: allChanges.filter((c) => c.type === "forecast_load_in").reduce((sum, c) => sum + c.quantity, 0),
@@ -468,7 +466,6 @@ export function calculateAllUploadChanges(
     // For subsequent uploads, only show if there are actual changes
     const { summary } = changes;
     return (
-      summary.newOrders > 0 ||
       summary.shipped > 0 ||
       summary.movedToLater > 0 ||
       summary.forecastLoadIns > 0 ||
