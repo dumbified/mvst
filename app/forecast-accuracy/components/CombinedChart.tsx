@@ -49,6 +49,9 @@ export default function CombinedChart({ data, visibleSeries }: CombinedChartProp
             {visibleSeries.movedToLater && (
               <Bar yAxisId="left" dataKey="movedToLater" fill="#e63946" name="Delayed" />
             )}
+            {visibleSeries.currentTotalSo && (
+              <Bar yAxisId="left" dataKey="currentTotalSo" fill="#9ca3af" name="Total SO" />
+            )}
             <Line
               yAxisId="right"
               type="monotone"

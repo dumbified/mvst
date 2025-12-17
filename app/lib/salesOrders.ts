@@ -207,7 +207,7 @@ export const parseSalesOrdersCsv = (
 
     // Only count open backlog in quantity. Shipped rows should not contribute to SO backlog.
     if (rawStatus === "shipped") {
-      bucket.shipped += quantity;
+        bucket.shipped += quantity;
     } else {
       bucket.quantity += quantity;
       if (rawStatus === "open" || rawStatus === "") {

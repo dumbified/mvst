@@ -25,6 +25,7 @@ export default function ForecastAccuracyPage() {
     forecastConversions: true,
     shipped: true,
     movedToLater: true,
+    currentTotalSo: true,
   });
   const [startUpload, setStartUpload] = useState<string | "all">("all");
   const [endUpload, setEndUpload] = useState<string | "all">("all");

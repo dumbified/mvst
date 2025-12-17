@@ -121,6 +121,7 @@ export default function ForecastAccuracyControls({
                 { key: "forecastConversions", label: "Fcast → SO" },
                 { key: "shipped", label: "Shipped" },
                 { key: "movedToLater", label: "Delayed" },
+                { key: "currentTotalSo", label: "Total SO" },
               ].map(({ key, label }) => (
                 <label key={key} className="inline-flex items-center gap-2">
                   <input

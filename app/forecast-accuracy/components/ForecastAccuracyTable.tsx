@@ -20,6 +20,7 @@ export default function ForecastAccuracyTable({ data }: ForecastAccuracyTablePro
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Delayed</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">New Forecast</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Fcast → SO</th>
+                <th className="border-b border-neutral-200 px-3 py-2 text-right">Total SO</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Accuracy %</th>
               </tr>
             </thead>
@@ -50,6 +51,9 @@ export default function ForecastAccuracyTable({ data }: ForecastAccuracyTablePro
                     title={row.forecastConversionsJobs.length ? row.forecastConversionsJobs.join(", ") : undefined}
                   >
                     {row.forecastConversions}
+                  </td>
+                  <td className="px-3 py-2 border-t border-neutral-200 text-right">
+                    {row.currentTotalSo}
                   </td>
                   <td className="px-3 py-2 border-t border-neutral-200 text-right font-semibold">
                     {row.accuracy}%

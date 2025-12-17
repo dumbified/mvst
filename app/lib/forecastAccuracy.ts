@@ -112,10 +112,15 @@ function compareSalesOrders(
       let foundInLaterMonth = false;
       let foundInLaterMonthKey = "";
       
+      // Check if job appears in an earlier month and is shipped
+      let foundInEarlierMonth = false;
+      let foundInEarlierMonthKey = "";
+      let isShippedInEarlierMonth = false;
+      
       // Check all months in current upload for this platform
       Object.entries(current.totals[platform as PlatformKey] ?? {}).forEach(([currMonthKey, currBucket]) => {
         if (currBucket.jobNumbers.includes(jobNumber)) {
-          // Compare month keys to see if it's a later month
+          // Compare month keys to see if it's a later or earlier month
           const [prevYear, prevMonth] = monthKey.split("-").map(Number);
           const [currYear, currMonth] = currMonthKey.split("-").map(Number);
           const prevTime = new Date(prevYear, prevMonth - 1, 1).getTime();
@@ -124,6 +129,14 @@ function compareSalesOrders(
           if (currTime > prevTime) {
             foundInLaterMonth = true;
             foundInLaterMonthKey = currMonthKey;
+          } else if (currTime < prevTime) {
+            // Job moved to an earlier month
+            foundInEarlierMonth = true;
+            foundInEarlierMonthKey = currMonthKey;
+            // Check if it's marked as shipped in the current upload
+            isShippedInEarlierMonth = 
+              (currBucket.jobStatus && currBucket.jobStatus[jobNumber] === "shipped") ||
+              (currBucket.shipped > 0);
           }
         }
       });
@@ -143,8 +156,23 @@ function compareSalesOrders(
           jobNumbers: [jobNumber],
           uploadDateLabel: current.uploadDateLabel,
         });
+      } else if (foundInEarlierMonth && isShippedInEarlierMonth) {
+        // Job moved to an earlier month and is marked as shipped in current upload
+        // This means it was shipped (even if previous upload didn't have shipment status)
+        const avgQtyPerJob = prevBucket && prevBucket.jobNumbers.length > 0
+          ? prevBucket.quantity / prevBucket.jobNumbers.length
+          : 1;
+        
+        changes.push({
+          type: "shipped",
+          platform: platform as PlatformKey,
+          monthKey,
+          quantity: Math.round(avgQtyPerJob),
+          jobNumbers: [jobNumber],
+          uploadDateLabel: current.uploadDateLabel,
+        });
       } else {
-        // Job completely disappeared - check if it was shipped
+        // Job completely disappeared - check if it was shipped in previous upload
         // Use per-job status when available; otherwise fall back to shipped totals
         const wasShipped =
           (prevBucket?.jobStatus && prevBucket.jobStatus[jobNumber] === "shipped") ||

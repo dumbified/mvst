@@ -59,6 +59,34 @@ export function useForecastAccuracyData(
         ? (sums.forecastConversions / totalForecastActivity) * 100
         : 0;
 
+      // Calculate current total SO for this upload period
+      // Find the SalesOrderSummary for this upload date
+      const salesOrderForPeriod = salesOrdersList.find(
+        (so) => so.uploadDateLabel === change.uploadDateLabel
+      );
+
+      let currentTotalSo = 0;
+      if (salesOrderForPeriod) {
+        // Get active months for this period
+        const activeMonthKeys = new Set(salesOrderForPeriod.months.map((m) => m.key));
+
+        // Sum quantities for all platforms (or selected platform) for active months only
+        const platformsToSum =
+          selectedPlatform === "all"
+            ? Object.keys(salesOrderForPeriod.totals) as PlatformKey[]
+            : [selectedPlatform];
+
+        platformsToSum.forEach((platform) => {
+          const platformTotals = salesOrderForPeriod.totals[platform] ?? {};
+          Object.entries(platformTotals).forEach(([monthKey, bucket]) => {
+            // Only count active months (months in the period's month range)
+            if (activeMonthKeys.has(monthKey)) {
+              currentTotalSo += bucket.quantity;
+            }
+          });
+        });
+      }
+
       const point: ChartDataPoint = {
         uploadDate: change.uploadDateLabel,
         uploadDateShort,
@@ -66,6 +94,7 @@ export function useForecastAccuracyData(
         movedToLater: sums.movedToLater,
         forecastLoadIns: sums.forecastLoadIns,
         forecastConversions: sums.forecastConversions,
+        currentTotalSo,
         shippedJobs: collectJobs(scopedChanges, "shipped"),
         movedToLaterJobs: collectJobs(scopedChanges, "moved_to_later_month"),
         forecastLoadInsJobs: collectJobs(scopedChanges, "forecast_load_in"),
@@ -86,7 +115,7 @@ export function useForecastAccuracyData(
       const t = parseDateLabel(d.uploadDate)?.getTime() ?? 0;
       return t >= startTime && t <= endTime;
     });
-  }, [uploadChanges, selectedPlatform, startUpload, endUpload]);
+  }, [uploadChanges, selectedPlatform, startUpload, endUpload, salesOrdersList]);
 
   return {
     uploadChanges,

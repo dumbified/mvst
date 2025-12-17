@@ -6,6 +6,7 @@ export type ChartDataPoint = {
   forecastLoadIns: number;
   forecastConversions: number;
   accuracy: number; // Forecast accuracy percentage
+  currentTotalSo: number; // Current total SO for active months
   // Job lists for tooltip/title
   shippedJobs: string[];
   movedToLaterJobs: string[];
@@ -21,6 +22,7 @@ export type VisibleSeries = {
   forecastConversions: boolean;
   shipped: boolean;
   movedToLater: boolean;
+  currentTotalSo: boolean;
 };
 
 export type UploadDateOption = {
