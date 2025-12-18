@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createBackup, cleanupOldBackups } from "../../lib/backup";
+import { createBackup, cleanupOldBackups } from "../../lib/storage/backup";
 
 /**
  * API route for creating backups

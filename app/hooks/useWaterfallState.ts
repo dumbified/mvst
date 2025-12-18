@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
-import { SalesOrderSummary } from "../lib/salesOrders";
-import { ForecastSummary } from "../lib/forecasts";
-import { loadSharedWaterfallState, saveSharedWaterfallState } from "../lib/stateStorage";
-import { sortPeriodsByUploadDate } from "../lib/dateUtils";
-import { DEFAULT_BOM_COSTS } from "../lib/constants";
-import { getLocalStorageTimestamp, setLocalStorageTimestamp } from "../lib/localStorageUtils";
+import { SalesOrderSummary } from "../lib/data/salesOrders";
+import { ForecastSummary } from "../lib/data/forecasts";
+import { loadSharedWaterfallState, saveSharedWaterfallState } from "../lib/storage/stateStorage";
+import { sortPeriodsByUploadDate } from "../lib/utils/dateUtils";
+import { DEFAULT_BOM_COSTS } from "../lib/core/constants";
+import { getLocalStorageTimestamp, setLocalStorageTimestamp } from "../lib/storage/localStorageUtils";
 
 /**
  * Hook to manage waterfall state (sales orders, forecasts, BOM costs)

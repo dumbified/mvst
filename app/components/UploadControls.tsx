@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { detectCsvFileType, type CsvFileType } from "../lib/csvValidation";
+import { detectCsvFileType, type CsvFileType } from "../lib/utils/csvValidation";
 
 type UploadKey = "salesOrders" | "forecast";
 

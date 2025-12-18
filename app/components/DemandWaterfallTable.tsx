@@ -8,10 +8,10 @@ import type Handsontable from "handsontable";
 import 'handsontable/styles/handsontable.min.css';
 import 'handsontable/styles/ht-theme-main.min.css';
 import { registerAllModules } from 'handsontable/registry';
-import { SalesOrderSummary } from "../lib/salesOrders";
-import { getBomCosts } from "../lib/constants";
-import { ForecastSummary } from "../lib/forecasts";
-import { getAllPlatforms } from "../lib/platformUtils";
+import { SalesOrderSummary } from "../lib/data/salesOrders";
+import { getBomCosts } from "../lib/core/constants";
+import { ForecastSummary } from "../lib/data/forecasts";
+import { getAllPlatforms } from "../lib/core/platformUtils";
 import { textRenderer } from "handsontable/renderers/textRenderer";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -28,8 +28,8 @@ import {
   createRowMetadataGetter,
   getRowsPerPeriod,
   getPlatformsPerPeriod,
-} from "../lib/waterfallTable";
-import { fetchMachineIdData, buildMachineIdMap, PlatformMonthMachineIdMap } from "../lib/machineIds";
+} from "../lib/core/waterfallTable";
+import { fetchMachineIdData, buildMachineIdMap, PlatformMonthMachineIdMap } from "../lib/data/machineIds";
 
 registerAllModules();
 

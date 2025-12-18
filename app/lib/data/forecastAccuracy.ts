@@ -1,7 +1,7 @@
 import { SalesOrderSummary, SalesOrderBucket } from "./salesOrders";
 import { ForecastSummary } from "./forecasts";
-import { PlatformKey } from "./constants";
-import { parseDateLabel } from "./dateUtils";
+import { PlatformKey } from "../core/constants";
+import { parseDateLabel } from "../utils/dateUtils";
 
 export type ChangeType = 
   | "new_order" 

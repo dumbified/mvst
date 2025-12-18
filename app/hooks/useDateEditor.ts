@@ -1,10 +1,10 @@
 import { useState, useCallback } from "react";
-import { SalesOrderSummary } from "../lib/salesOrders";
-import { ForecastSummary } from "../lib/forecasts";
-import { buildMonthsWindow, parseDateLabel, sortPeriodsByUploadDate } from "../lib/dateUtils";
-import { formatFullDate } from "../lib/salesOrders";
-import { saveSharedWaterfallState } from "../lib/stateStorage";
-import { setLocalStorageTimestamp } from "../lib/localStorageUtils";
+import { SalesOrderSummary } from "../lib/data/salesOrders";
+import { ForecastSummary } from "../lib/data/forecasts";
+import { buildMonthsWindow, parseDateLabel, sortPeriodsByUploadDate } from "../lib/utils/dateUtils";
+import { formatFullDate } from "../lib/data/salesOrders";
+import { saveSharedWaterfallState } from "../lib/storage/stateStorage";
+import { setLocalStorageTimestamp } from "../lib/storage/localStorageUtils";
 
 interface UseDateEditorProps {
   salesOrdersList: SalesOrderSummary[];

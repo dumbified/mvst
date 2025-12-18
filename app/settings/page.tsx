@@ -17,8 +17,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-import { PlatformKey, DEFAULT_BOM_COSTS, PART_NUMBER_TO_PLATFORM } from "../lib/constants";
-import { saveSettings, type AppSettings } from "../lib/settingsStorage";
+import { PlatformKey, DEFAULT_BOM_COSTS, PART_NUMBER_TO_PLATFORM } from "../lib/core/constants";
+import { saveSettings, type AppSettings } from "../lib/storage/settingsStorage";
 import { setCachedSettings, useSettings } from "../hooks/useSettings";
 
 export default function SettingsPage() {

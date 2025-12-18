@@ -1,6 +1,6 @@
 import { PLATFORM_LABELS, PlatformKey, getBomCosts } from "./constants";
-import { SalesOrderSummary } from "./salesOrders";
-import { ForecastSummary } from "./forecasts";
+import { SalesOrderSummary } from "../data/salesOrders";
+import { ForecastSummary } from "../data/forecasts";
 
 /**
  * Discover all platforms from data and settings

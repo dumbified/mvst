@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from "react";
-import { loadSettings, type AppSettings } from "../lib/settingsStorage";
-import { PART_NUMBER_TO_PLATFORM, DEFAULT_BOM_COSTS } from "../lib/constants";
+import { loadSettings, type AppSettings } from "../lib/storage/settingsStorage";
+import { PART_NUMBER_TO_PLATFORM, DEFAULT_BOM_COSTS } from "../lib/core/constants";
 
 // Module-level cache for settings
 let settingsCache: AppSettings | null = null;

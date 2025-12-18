@@ -1,4 +1,4 @@
-import { PlatformKey, PLATFORM_LABELS, MONTH_ABBREVIATIONS, PART_NUMBER_TO_PLATFORM, getPartNumberToPlatform } from './constants';
+import { PlatformKey, PLATFORM_LABELS, MONTH_ABBREVIATIONS, PART_NUMBER_TO_PLATFORM, getPartNumberToPlatform } from '../core/constants';
 
 export type SalesOrderBucket = {
   quantity: number;
@@ -24,7 +24,7 @@ const MONTH_LABEL_FORMATTER = new Intl.DateTimeFormat("en-GB", {
   year: "2-digit",
 });
 
-import { normalizeHeader, detectDelimiter, parseDelimitedLine } from './csvUtils';
+import { normalizeHeader, detectDelimiter, parseDelimitedLine } from '../utils/csvUtils';
 
 export const monthKeyFromDate = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;

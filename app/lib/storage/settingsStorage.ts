@@ -1,6 +1,6 @@
 'use client';
 
-import type { PlatformKey } from "./constants";
+import type { PlatformKey } from "../core/constants";
 import { loadJsonFromStorage, saveJsonToStorage } from "./supabaseStorage";
 
 const SETTINGS_BUCKET = process.env.NEXT_PUBLIC_WATERFALL_STATE_BUCKET ?? "uploads";

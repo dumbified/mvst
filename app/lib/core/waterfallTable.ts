@@ -2,8 +2,8 @@ import {
   SalesOrderBucket,
   SalesOrderSummary,
   formatMonthLabel,
-} from "./salesOrders";
-import { ForecastSummary } from "./forecasts";
+} from "../data/salesOrders";
+import { ForecastSummary } from "../data/forecasts";
 
 export type MonthColumn = { key: string; label: string };
 

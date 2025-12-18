@@ -1,10 +1,10 @@
 import { useCallback } from "react";
-import { SalesOrderSummary, parseSalesOrdersCsv } from "../lib/salesOrders";
-import { ForecastSummary, parseForecastCsv } from "../lib/forecasts";
-import { uploadFileToSupabase } from "../lib/storage";
-import { sortPeriodsByUploadDate } from "../lib/dateUtils";
-import { PLATFORM_LABELS } from "../lib/constants";
-import { fetchMachineIdData, buildMachineIdMap, convertMachineIdMapToRecord } from "../lib/machineIds";
+import { SalesOrderSummary, parseSalesOrdersCsv } from "../lib/data/salesOrders";
+import { ForecastSummary, parseForecastCsv } from "../lib/data/forecasts";
+import { uploadFileToSupabase } from "../lib/storage/storage";
+import { sortPeriodsByUploadDate } from "../lib/utils/dateUtils";
+import { PLATFORM_LABELS } from "../lib/core/constants";
+import { fetchMachineIdData, buildMachineIdMap, convertMachineIdMapToRecord } from "../lib/data/machineIds";
 
 interface UseWaterfallUploadsProps {
   salesOrdersList: SalesOrderSummary[];

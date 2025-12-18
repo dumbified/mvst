@@ -1,7 +1,7 @@
 'use client';
 
-import { SalesOrderSummary } from "./salesOrders";
-import { ForecastSummary } from "./forecasts";
+import { SalesOrderSummary } from "../data/salesOrders";
+import { ForecastSummary } from "../data/forecasts";
 import { loadJsonFromStorage, saveJsonToStorage } from "./supabaseStorage";
 
 const STATE_BUCKET = process.env.NEXT_PUBLIC_WATERFALL_STATE_BUCKET ?? "uploads";

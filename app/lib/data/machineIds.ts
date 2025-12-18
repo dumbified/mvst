@@ -1,4 +1,4 @@
-import { PlatformKey, getPartNumberToPlatform } from './constants';
+import { PlatformKey, getPartNumberToPlatform } from '../core/constants';
 
 export type MachineIdData = {
   jobPart: string;

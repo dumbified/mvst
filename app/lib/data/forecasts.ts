@@ -4,8 +4,8 @@ import {
   monthKeyFromDate,
   parseDmyDateTime,
 } from "./salesOrders";
-import { MONTH_ABBREVIATIONS, PLATFORM_LABELS, getPartNumberToPlatform } from "./constants";
-import { normalizeHeader, detectDelimiter, parseDelimitedLine } from './csvUtils';
+import { MONTH_ABBREVIATIONS, PLATFORM_LABELS, getPartNumberToPlatform } from "../core/constants";
+import { normalizeHeader, detectDelimiter, parseDelimitedLine } from '../utils/csvUtils';
 
 export type ForecastSummary = {
   uploadDateLabel: string;
