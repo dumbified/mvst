@@ -4,14 +4,14 @@ import {
   monthKeyFromDate,
   parseDmyDateTime,
 } from "./salesOrders";
-import { MONTH_ABBREVIATIONS, PLATFORM_LABELS, PART_NUMBER_TO_PLATFORM, PlatformKey } from "./constants";
+import { MONTH_ABBREVIATIONS, PLATFORM_LABELS, getPartNumberToPlatform } from "./constants";
 import { normalizeHeader, detectDelimiter, parseDelimitedLine } from './csvUtils';
 
 export type ForecastSummary = {
   uploadDateLabel: string;
   months: { key: string; label: string }[];
-  totals: Record<PlatformKey, Record<string, number>>;
-  machineIds?: Record<PlatformKey, Record<string, string[]>>; // platform -> monthKey -> machineIds[]
+  totals: Record<string, Record<string, number>>; // Changed from PlatformKey to string to support dynamic platforms
+  machineIds?: Record<string, Record<string, string[]>>; // platform -> monthKey -> machineIds[]
 };
 
 const sanitizeQuantity = (value: string) => {
@@ -46,14 +46,28 @@ const parseForecastDate = (value: string) => {
   return new Date(year, month, day);
 };
 
-const initializeTotals = (): Record<PlatformKey, Record<string, number>> => {
-  return PLATFORM_LABELS.reduce(
-    (acc, platform) => ({
-      ...acc,
-      [platform]: {},
-    }),
-    {} as Record<PlatformKey, Record<string, number>>,
-  );
+const initializeTotals = (): Record<string, Record<string, number>> => {
+  // Get all platforms from settings (part number mappings) to support new platforms
+  const partNumberToPlatform = getPartNumberToPlatform();
+  const platformsFromSettings = new Set<string>();
+  
+  // Add all platforms from the mapping
+  Object.values(partNumberToPlatform).forEach(platform => {
+    platformsFromSettings.add(platform);
+  });
+  
+  // Also include default platforms
+  PLATFORM_LABELS.forEach(platform => {
+    platformsFromSettings.add(platform);
+  });
+  
+  // Initialize with all known platforms
+  const totals: Record<string, Record<string, number>> = {};
+  platformsFromSettings.forEach(platform => {
+    totals[platform] = {};
+  });
+  
+  return totals;
 };
 
 const addMonthsToKey = (key: string, monthsToAdd: number) => {
@@ -135,7 +149,8 @@ export const parseForecastCsv = (
     }
 
     const partRaw = (cells[partIndex] ?? "").trim().toLowerCase();
-    const platform = PART_NUMBER_TO_PLATFORM[partRaw];
+    const partNumberToPlatform = getPartNumberToPlatform();
+    const platform = partNumberToPlatform[partRaw];
     if (!platform) continue;
 
     const forecastDate = parseForecastDate(cells[dateIndex] ?? "");
@@ -147,6 +162,10 @@ export const parseForecastCsv = (
     const monthKey = monthKeyFromDate(forecastDate);
     if (compareMonthKeys(monthKey, uploadMonthKey) >= 0 && compareMonthKeys(monthKey, endKey) <= 0) {
       monthSet.add(monthKey);
+      // Dynamically add platform if it doesn't exist (for new platforms from settings)
+      if (!totals[platform]) {
+        totals[platform] = {};
+      }
       totals[platform][monthKey] = (totals[platform][monthKey] ?? 0) + quantity;
     }
   }

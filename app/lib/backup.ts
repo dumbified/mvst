@@ -1,5 +1,6 @@
 import { getSupabase } from "./supabaseClient";
 import { SharedWaterfallState } from "./stateStorage";
+import { loadJsonFromStorage } from "./supabaseStorage";
 
 const STATE_BUCKET = process.env.NEXT_PUBLIC_WATERFALL_STATE_BUCKET ?? "uploads";
 const STATE_PATH = "shared/waterfall-state.json";
@@ -24,19 +25,7 @@ function formatBackupDate(date: Date): string {
  * Load state from storage (server-side version for backups)
  */
 async function loadStateForBackup(): Promise<SharedWaterfallState | null> {
-  try {
-    const supabase = getSupabase();
-    const { data, error } = await supabase.storage.from(STATE_BUCKET).download(STATE_PATH);
-    
-    if (error || !data) {
-      return null;
-    }
-    
-    const text = await data.text();
-    return JSON.parse(text) as SharedWaterfallState;
-  } catch {
-    return null;
-  }
+  return loadJsonFromStorage<SharedWaterfallState>(STATE_BUCKET, STATE_PATH);
 }
 
 /**

@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { SalesOrderSummary } from "../lib/salesOrders";
 import { ForecastSummary } from "../lib/forecasts";
 import { loadSharedWaterfallState } from "../lib/stateStorage";
-import { PlatformKey } from "../lib/constants";
+import { getBomCosts } from "../lib/constants";
+import { getAllPlatforms } from "../lib/platformUtils";
 import { useForecastAccuracyData } from "./hooks/useForecastAccuracyData";
 import ForecastAccuracyControls from "./components/ForecastAccuracyControls";
 import CombinedChart from "./components/CombinedChart";
@@ -18,7 +19,7 @@ import { ChartType, VisibleSeries } from "./types";
 export default function ForecastAccuracyPage() {
   const [salesOrdersList, setSalesOrdersList] = useState<SalesOrderSummary[]>([]);
   const [forecastSummaryList, setForecastSummaryList] = useState<ForecastSummary[]>([]);
-  const [selectedPlatform, setSelectedPlatform] = useState<PlatformKey | "all">("all");
+  const [selectedPlatform, setSelectedPlatform] = useState<string | "all">("all");
   const [chartType, setChartType] = useState<ChartType>("combined");
   const [visibleSeries, setVisibleSeries] = useState<VisibleSeries>({
     forecastLoadIns: true,
@@ -47,6 +48,12 @@ export default function ForecastAccuracyPage() {
     };
     loadData();
   }, []);
+
+  // Dynamically discover all platforms from data and settings
+  const allPlatforms = useMemo(
+    () => getAllPlatforms(salesOrdersList, forecastSummaryList, getBomCosts()),
+    [salesOrdersList, forecastSummaryList]
+  );
 
   const { uploadChanges, allUploadDates, chartData } = useForecastAccuracyData(
     salesOrdersList,
@@ -77,6 +84,7 @@ export default function ForecastAccuracyPage() {
             <ForecastAccuracyControls
               selectedPlatform={selectedPlatform}
               onPlatformChange={setSelectedPlatform}
+              allPlatforms={allPlatforms}
               chartType={chartType}
               onChartTypeChange={setChartType}
               visibleSeries={visibleSeries}

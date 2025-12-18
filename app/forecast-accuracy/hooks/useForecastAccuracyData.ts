@@ -3,13 +3,12 @@ import { SalesOrderSummary } from "../../lib/salesOrders";
 import { ForecastSummary } from "../../lib/forecasts";
 import { calculateAllUploadChanges, UploadChanges } from "../../lib/forecastAccuracy";
 import { parseDateLabel } from "../../lib/dateUtils";
-import { PlatformKey } from "../../lib/constants";
 import { ChartDataPoint, UploadDateOption } from "../types";
 
 export function useForecastAccuracyData(
   salesOrdersList: SalesOrderSummary[],
   forecastSummaryList: ForecastSummary[],
-  selectedPlatform: PlatformKey | "all",
+  selectedPlatform: string | "all",
   startUpload: string | "all",
   endUpload: string | "all",
 ) {
@@ -73,7 +72,7 @@ export function useForecastAccuracyData(
         // Sum quantities for all platforms (or selected platform) for active months only
         const platformsToSum =
           selectedPlatform === "all"
-            ? Object.keys(salesOrderForPeriod.totals) as PlatformKey[]
+            ? Object.keys(salesOrderForPeriod.totals)
             : [selectedPlatform];
 
         platformsToSum.forEach((platform) => {

@@ -3,7 +3,6 @@ import {
   SalesOrderSummary,
   formatMonthLabel,
 } from "./salesOrders";
-import { PLATFORM_LABELS, PlatformKey } from "./constants";
 import { ForecastSummary } from "./forecasts";
 
 export type MonthColumn = { key: string; label: string };
@@ -79,17 +78,22 @@ export function buildEffectivePeriods(
   }
 
   if (forecastSummaryList.length > 0) {
-    return forecastSummaryList.map((fc) => ({
-      uploadDateLabel: fc.uploadDateLabel,
-      months: fc.months,
-      totals: PLATFORM_LABELS.reduce(
+    return forecastSummaryList.map((fc) => {
+      // Use platforms from the forecast data itself (supports dynamic platforms)
+      const platforms = Object.keys(fc.totals);
+      const totals = platforms.reduce(
         (acc, platform) => ({
           ...acc,
           [platform]: {},
         }),
-        {} as Record<PlatformKey, Record<string, SalesOrderBucket>>,
-      ),
-    }));
+        {} as Record<string, Record<string, SalesOrderBucket>>,
+      );
+      return {
+        uploadDateLabel: fc.uploadDateLabel,
+        months: fc.months,
+        totals,
+      };
+    });
   }
 
   return [];
@@ -103,7 +107,7 @@ export function getRowsPerPeriod(showTotals: boolean, platformCount: number) {
 type BuildDataRowsArgs = {
   effectivePeriods: SalesOrderSummary[];
   forecastSummaryList: ForecastSummary[];
-  visiblePlatforms: PlatformKey[];
+  visiblePlatforms: string[]; // Changed from PlatformKey[] to string[] to support dynamic platforms
   months: MonthColumn[];
   bomCosts: Record<string, number>;
   showTotals: boolean;
@@ -133,7 +137,21 @@ export function buildDataRows({
     const periodRows: (string | number)[][] = [];
     const periodForecast = forecastMap.get(salesOrders.uploadDateLabel);
 
-    visiblePlatforms.forEach((platform) => {
+    // Get platforms that actually exist in this period's data (don't show new platforms in old periods)
+    const periodPlatforms = new Set<string>();
+    
+    // Add platforms from sales orders for this period
+    Object.keys(salesOrders.totals).forEach(p => periodPlatforms.add(p));
+    
+    // Add platforms from forecast for this period (if exists)
+    if (periodForecast) {
+      Object.keys(periodForecast.totals).forEach(p => periodPlatforms.add(p));
+    }
+    
+    // Filter visiblePlatforms to only include platforms that exist in this period
+    const periodVisiblePlatforms = visiblePlatforms.filter(p => periodPlatforms.has(p));
+
+    periodVisiblePlatforms.forEach((platform) => {
       const row: (string | number)[] = [];
       const displayUploadLabel = periodForecast?.uploadDateLabel ?? salesOrders.uploadDateLabel;
       row.push(displayUploadLabel);
@@ -231,6 +249,31 @@ export function buildDataRows({
   return rows;
 }
 
+// Export a helper to get platform counts per period
+export function getPlatformsPerPeriod(
+  effectivePeriods: SalesOrderSummary[],
+  forecastSummaryList: ForecastSummary[],
+  visiblePlatforms: string[]
+): number[] {
+  const forecastMap = new Map<string, ForecastSummary>();
+  forecastSummaryList.forEach((fc) => {
+    forecastMap.set(fc.uploadDateLabel, fc);
+  });
+
+  return effectivePeriods.map((salesOrders) => {
+    const periodForecast = forecastMap.get(salesOrders.uploadDateLabel);
+    const periodPlatforms = new Set<string>();
+    
+    Object.keys(salesOrders.totals).forEach(p => periodPlatforms.add(p));
+    if (periodForecast) {
+      Object.keys(periodForecast.totals).forEach(p => periodPlatforms.add(p));
+    }
+    
+    const periodVisiblePlatforms = visiblePlatforms.filter(p => periodPlatforms.has(p));
+    return periodVisiblePlatforms.length;
+  });
+}
+
 export function createNestedHeaders(months: MonthColumn[]): NestedHeaders {
   const topRow: HeaderCell[] = [
     { label: "Fcast Load in Date", colspan: 1 },
@@ -255,20 +298,28 @@ export function createColumnWidths(months: MonthColumn[]) {
   return widths;
 }
 
-export function createMergeCells(periodCount: number, rowsPerPeriod: number): MergeCellSetting[] {
-  if (rowsPerPeriod <= 1 || periodCount === 0) {
+export function createMergeCells(periodCount: number, rowsPerPeriod: number | number[]): MergeCellSetting[] {
+  if (periodCount === 0) {
     return [];
   }
 
   const merges: MergeCellSetting[] = [];
+  let currentRow = 0;
+
   for (let periodIndex = 0; periodIndex < periodCount; periodIndex++) {
-    const startRow = periodIndex * rowsPerPeriod;
+    const periodRows = Array.isArray(rowsPerPeriod) ? rowsPerPeriod[periodIndex] : rowsPerPeriod;
+    if (periodRows <= 1) {
+      currentRow += periodRows;
+      continue;
+    }
+
     merges.push({
-      row: startRow,
+      row: currentRow,
       col: 0,
-      rowspan: rowsPerPeriod,
+      rowspan: periodRows,
       colspan: 1,
     });
+    currentRow += periodRows;
   }
 
   return merges;
@@ -276,7 +327,7 @@ export function createMergeCells(periodCount: number, rowsPerPeriod: number): Me
 
 type RowMetadataArgs = {
   effectivePeriods: SalesOrderSummary[];
-  rowsPerPeriod: number;
+  rowsPerPeriod: number | number[];
   showTotals: boolean;
 };
 
@@ -285,31 +336,44 @@ export function createRowMetadataGetter({
   rowsPerPeriod,
   showTotals,
 }: RowMetadataArgs) {
+  // Pre-calculate cumulative row counts for efficient lookup
+  const cumulativeRows: number[] = [];
+  let total = 0;
+  const rowsArray = Array.isArray(rowsPerPeriod) ? rowsPerPeriod : Array(effectivePeriods.length).fill(rowsPerPeriod);
+  
+  rowsArray.forEach((count) => {
+    cumulativeRows.push(total);
+    total += count;
+  });
+
   return (row: number): RowMetadata => {
-    if (rowsPerPeriod === 0) {
-      return { periodIndex: -1, platformIndex: -1, isTotals: false, validMonthKeys: new Set<string>() };
+    // Find which period this row belongs to
+    let periodIndex = -1;
+    for (let i = cumulativeRows.length - 1; i >= 0; i--) {
+      if (row >= cumulativeRows[i]) {
+        periodIndex = i;
+        break;
+      }
     }
 
-    const periodIndex = Math.floor(row / rowsPerPeriod);
-    const rowInPeriod = rowsPerPeriod === 0 ? 0 : row % rowsPerPeriod;
-    const isTotals = showTotals && rowInPeriod === rowsPerPeriod - 1;
-    const platformIndex = isTotals ? -1 : rowInPeriod;
-
-    if (periodIndex >= effectivePeriods.length) {
+    if (periodIndex < 0 || periodIndex >= effectivePeriods.length) {
       return { periodIndex: -1, platformIndex: -1, isTotals: false, validMonthKeys: new Set<string>() };
     }
 
     const period = effectivePeriods[periodIndex];
     const validMonthKeys = new Set(period.months.map((m) => m.key));
+    const rowInPeriod = row - cumulativeRows[periodIndex];
+    const periodRowCount = rowsArray[periodIndex];
+    const isTotals = showTotals && rowInPeriod === periodRowCount - 1;
 
-    return { periodIndex, platformIndex, isTotals, validMonthKeys };
+    return { periodIndex, platformIndex: isTotals ? -1 : rowInPeriod, isTotals, validMonthKeys };
   };
 }
 
 type CellCommentsArgs = {
   salesOrdersList: SalesOrderSummary[];
   forecastSummaryList: ForecastSummary[];
-  visiblePlatforms: PlatformKey[];
+  visiblePlatforms: string[]; // Changed from PlatformKey[] to string[] to support dynamic platforms
   months: MonthColumn[];
   showTotals: boolean;
 };
@@ -323,7 +387,18 @@ export function buildCellComments({
 }: CellCommentsArgs) {
   if (salesOrdersList.length === 0) return [];
   const comments: { row: number; col: number; comment: { value: string } }[] = [];
-  const rowsPerPeriod = getRowsPerPeriod(showTotals, visiblePlatforms.length);
+  
+  // Calculate platforms per period (only platforms that exist in each period)
+  const platformsPerPeriod = getPlatformsPerPeriod(salesOrdersList, forecastSummaryList, visiblePlatforms);
+  const rowsPerPeriodArray = platformsPerPeriod.map(count => getRowsPerPeriod(showTotals, count));
+  
+  // Calculate cumulative row counts
+  const cumulativeRows: number[] = [];
+  let total = 0;
+  rowsPerPeriodArray.forEach((count) => {
+    cumulativeRows.push(total);
+    total += count;
+  });
 
   // Create forecast map for quick lookup
   const forecastMap = new Map<string, ForecastSummary>();
@@ -335,8 +410,16 @@ export function buildCellComments({
     const periodMonthKeys = new Set(salesOrders.months.map((m) => m.key));
     const periodForecast = forecastMap.get(salesOrders.uploadDateLabel);
 
-    visiblePlatforms.forEach((platform, platformIndex) => {
-      const rowIndex = rowsPerPeriod === 0 ? 0 : periodIndex * rowsPerPeriod + platformIndex;
+    // Get platforms that actually exist in this period
+    const periodPlatforms = new Set<string>();
+    Object.keys(salesOrders.totals).forEach(p => periodPlatforms.add(p));
+    if (periodForecast) {
+      Object.keys(periodForecast.totals).forEach(p => periodPlatforms.add(p));
+    }
+    const periodVisiblePlatforms = visiblePlatforms.filter(p => periodPlatforms.has(p));
+
+    periodVisiblePlatforms.forEach((platform, platformIndex) => {
+      const rowIndex = cumulativeRows[periodIndex] + platformIndex;
       const totals = salesOrders.totals[platform] ?? {};
       const platformForecast = periodForecast?.totals[platform] ?? {};
 

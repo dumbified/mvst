@@ -1,13 +1,27 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { PLATFORM_LABELS, PlatformKey } from "../../lib/constants";
+import { useState } from "react";
 import { ChartType, VisibleSeries, UploadDateOption } from "../types";
-import { useClickOutside } from "../../hooks/useClickOutside";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 interface ForecastAccuracyControlsProps {
-  selectedPlatform: PlatformKey | "all";
-  onPlatformChange: (platform: PlatformKey | "all") => void;
+  selectedPlatform: string | "all";
+  onPlatformChange: (platform: string | "all") => void;
+  allPlatforms: string[];
   chartType: ChartType;
   onChartTypeChange: (type: ChartType) => void;
   visibleSeries: VisibleSeries;
@@ -22,6 +36,7 @@ interface ForecastAccuracyControlsProps {
 export default function ForecastAccuracyControls({
   selectedPlatform,
   onPlatformChange,
+  allPlatforms,
   chartType,
   onChartTypeChange,
   visibleSeries,
@@ -33,88 +48,91 @@ export default function ForecastAccuracyControls({
   allUploadDates,
 }: ForecastAccuracyControlsProps) {
   const [showSeriesMenu, setShowSeriesMenu] = useState(false);
-  const seriesMenuRef = useRef<HTMLDivElement>(null);
-
-  useClickOutside(seriesMenuRef, () => setShowSeriesMenu(false), showSeriesMenu);
 
   return (
-    <div className="flex flex-wrap gap-3 items-start">
+    <div className="flex flex-wrap gap-3 items-end">
       <div className="flex flex-col gap-1">
-        <label className="block text-xs font-medium text-neutral-700">Platform</label>
-        <select
-          value={selectedPlatform}
-          onChange={(e) => onPlatformChange(e.target.value as PlatformKey | "all")}
-          className="rounded border border-neutral-300 px-3 py-1.5 text-xs bg-white min-w-[140px]"
-        >
-          <option value="all">All Platforms</option>
-          {PLATFORM_LABELS.map((platform) => (
-            <option key={platform} value={platform}>
-              {platform}
-            </option>
-          ))}
-        </select>
+        <Label className="text-xs font-medium text-neutral-700">Platform</Label>
+        <Select value={selectedPlatform} onValueChange={onPlatformChange}>
+          <SelectTrigger className="text-xs min-w-[140px] h-8">
+            <SelectValue placeholder="Select platform" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Platforms</SelectItem>
+            {allPlatforms.map((platform) => (
+              <SelectItem key={platform} value={platform}>
+                {platform}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="block text-xs font-medium text-neutral-700">Chart Type</label>
-        <select
-          value={chartType}
-          onChange={(e) => onChartTypeChange(e.target.value as ChartType)}
-          className="rounded border border-neutral-300 px-3 py-1.5 text-xs bg-white min-w-[150px]"
-        >
-          <option value="combined">Combined View</option>
-          <option value="accuracy">Accuracy Only</option>
-        </select>
+        <Label className="text-xs font-medium text-neutral-700">Chart Type</Label>
+        <Select value={chartType} onValueChange={(value) => onChartTypeChange(value as ChartType)}>
+          <SelectTrigger className="text-xs min-w-[150px] h-8">
+            <SelectValue placeholder="Select chart type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="combined">Combined View</SelectItem>
+            <SelectItem value="accuracy">Accuracy Only</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Separator */}
       <div className="h-full w-px bg-neutral-200 mx-1 self-stretch" />
 
       <div className="flex flex-col gap-1">
-        <label className="block text-xs font-medium text-neutral-700">Upload Range</label>
+        <Label className="text-xs font-medium text-neutral-700">Upload Range</Label>
         <div className="flex items-center gap-2">
-          <select
-            value={startUpload}
-            onChange={(e) => onStartUploadChange(e.target.value as string)}
-            className="rounded border border-neutral-300 px-2 py-1 text-xs bg-white min-w-[140px]"
-          >
-            <option value="all">Start: All</option>
-            {allUploadDates.map((d) => (
-              <option key={`start-${d.label}`} value={d.label}>
-                {d.label}
-              </option>
-            ))}
-          </select>
+          <Select value={startUpload} onValueChange={onStartUploadChange}>
+            <SelectTrigger className="text-xs min-w-[140px] h-8">
+              <SelectValue placeholder="Start date" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Start: All</SelectItem>
+              {allUploadDates.map((d) => (
+                <SelectItem key={`start-${d.label}`} value={d.label}>
+                  {d.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <span className="text-neutral-500 text-xs">to</span>
-          <select
-            value={endUpload}
-            onChange={(e) => onEndUploadChange(e.target.value as string)}
-            className="rounded border border-neutral-300 px-2 py-1 text-xs bg-white min-w-[140px]"
-          >
-            <option value="all">End: All</option>
-            {allUploadDates.map((d) => (
-              <option key={`end-${d.label}`} value={d.label}>
-                {d.label}
-              </option>
-            ))}
-          </select>
+          <Select value={endUpload} onValueChange={onEndUploadChange}>
+            <SelectTrigger className="text-xs min-w-[140px] h-8">
+              <SelectValue placeholder="End date" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">End: All</SelectItem>
+              {allUploadDates.map((d) => (
+                <SelectItem key={`end-${d.label}`} value={d.label}>
+                  {d.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
       {/* Separator */}
       <div className="h-full w-px bg-neutral-200 mx-1 self-stretch" />
 
-      <div className="relative" ref={seriesMenuRef}>
-        <label className="block text-xs font-medium text-neutral-700 mb-1">Series</label>
-        <button
-          type="button"
-          onClick={() => setShowSeriesMenu((prev) => !prev)}
-          className="rounded border border-neutral-300 px-3 py-1.5 text-xs bg-white hover:bg-neutral-50 min-w-[140px] text-left"
-        >
-          Toggle Series ▾
-        </button>
-        {showSeriesMenu && (
-          <div className="absolute z-[7000] mt-1 w-48 rounded-lg border border-neutral-200 bg-white shadow-lg p-3 text-xs">
+      <div className="flex flex-col gap-1">
+        <Label className="text-xs font-medium text-neutral-700">Series</Label>
+        <Popover open={showSeriesMenu} onOpenChange={setShowSeriesMenu}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              className="text-xs min-w-[140px] h-8 justify-start"
+            >
+              Toggle Series ▾
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-48 p-3" align="start">
             <div className="flex flex-col gap-2">
               {[
                 { key: "forecastLoadIns", label: "New Forecast" },
@@ -123,21 +141,24 @@ export default function ForecastAccuracyControls({
                 { key: "movedToLater", label: "Delayed" },
                 { key: "currentTotalSo", label: "Total SO" },
               ].map(({ key, label }) => (
-                <label key={key} className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="h-3 w-3"
+                <Label
+                  key={key}
+                  htmlFor={`series-${key}`}
+                  className="flex items-center gap-2 cursor-pointer"
+                >
+                  <Checkbox
+                    id={`series-${key}`}
                     checked={visibleSeries[key as keyof VisibleSeries]}
-                    onChange={(e) =>
-                      onVisibleSeriesChange({ ...visibleSeries, [key]: e.target.checked })
+                    onCheckedChange={(checked) =>
+                      onVisibleSeriesChange({ ...visibleSeries, [key]: checked === true })
                     }
                   />
-                  <span>{label}</span>
-                </label>
+                  <span className="text-xs">{label}</span>
+                </Label>
               ))}
             </div>
-          </div>
-        )}
+          </PopoverContent>
+        </Popover>
       </div>
     </div>
   );

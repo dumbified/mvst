@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import React, { useMemo, useState, useRef, useEffect } from "react";
+import React, { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { HotTable } from "@handsontable/react-wrapper";
 import type { HotTableRef } from "@handsontable/react-wrapper";
 import type Handsontable from "handsontable";
@@ -9,9 +9,12 @@ import 'handsontable/styles/handsontable.min.css';
 import 'handsontable/styles/ht-theme-main.min.css';
 import { registerAllModules } from 'handsontable/registry';
 import { SalesOrderSummary } from "../lib/salesOrders";
-import { PLATFORM_LABELS, PlatformKey } from "../lib/constants";
+import { getBomCosts } from "../lib/constants";
 import { ForecastSummary } from "../lib/forecasts";
+import { getAllPlatforms } from "../lib/platformUtils";
 import { textRenderer } from "handsontable/renderers/textRenderer";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   MonthColumn,
   SUMMARY_COLUMNS,
@@ -24,13 +27,11 @@ import {
   createNestedHeaders,
   createRowMetadataGetter,
   getRowsPerPeriod,
+  getPlatformsPerPeriod,
 } from "../lib/waterfallTable";
 import { fetchMachineIdData, buildMachineIdMap, PlatformMonthMachineIdMap } from "../lib/machineIds";
-import { DEFAULT_BOM_COSTS } from "../lib/constants";
 
 registerAllModules();
-
-const PLATFORM_OPTIONS: PlatformKey[] = [...PLATFORM_LABELS];
 
 const TABLE_FONT_SIZE_PX = 10;
 
@@ -40,7 +41,6 @@ type DemandWaterfallTableProps = {
   salesOrdersList?: SalesOrderSummary[];
   forecastSummaryList?: ForecastSummary[];
   bomCosts?: Record<string, number>;
-  onBomCostsChange?: (bomCosts: Record<string, number>) => void;
   editMode?: boolean;
   onDateEdit?: (dateLabel: string, anchor?: DateAnchor) => void;
   onDateDelete?: (dateLabel: string) => void;
@@ -50,25 +50,43 @@ export default function DemandWaterfallTable({
   salesOrdersList = [],
   forecastSummaryList = [],
   bomCosts: propBomCosts,
-  onBomCostsChange,
   editMode = false,
   onDateEdit,
   onDateDelete,
 }: DemandWaterfallTableProps) {
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(() => [...PLATFORM_OPTIONS]);
+  const resolvedBomCosts = propBomCosts ?? getBomCosts();
+  
+  // Dynamically discover all platforms from data and settings
+  const allPlatforms = useMemo(
+    () => getAllPlatforms(salesOrdersList, forecastSummaryList, resolvedBomCosts),
+    [salesOrdersList, forecastSummaryList, resolvedBomCosts]
+  );
+  
+  // Track which platforms user has explicitly deselected
+  const [deselectedPlatforms, setDeselectedPlatforms] = useState<Set<string>>(new Set());
+  
+  // Compute selected platforms as derived state (all platforms minus deselected ones)
+  const selectedPlatforms = useMemo(() => {
+    return allPlatforms.filter(platform => !deselectedPlatforms.has(platform));
+  }, [allPlatforms, deselectedPlatforms]);
+  
   const [showTotals, setShowTotals] = useState<boolean>(true);
   const hotTableRef = useRef<HotTableRef | null>(null);
   const getHotInstance = () => hotTableRef.current?.hotInstance as Handsontable | undefined;
-  const bomEditorButtonRef = useRef<HTMLButtonElement>(null);
-  const bomEditorPopupRef = useRef<HTMLDivElement>(null);
-  const resolvedBomCosts = propBomCosts ?? DEFAULT_BOM_COSTS;
-  const [isEditingCosts, setIsEditingCosts] = useState(false);
-  const [editingCosts, setEditingCosts] = useState<Record<string, string>>(() => {
-    const obj: Record<string, string> = {};
-    PLATFORM_OPTIONS.forEach((p) => (obj[p] = String(resolvedBomCosts[p] ?? 0)));
-    return obj;
-  });
   const [, setPlatformMonthMachineIdMap] = useState<PlatformMonthMachineIdMap | undefined>(undefined);
+  
+  // Function to toggle platform selection
+  const togglePlatform = useCallback((platform: string) => {
+    setDeselectedPlatforms(prev => {
+      const next = new Set(prev);
+      if (next.has(platform)) {
+        next.delete(platform);
+      } else {
+        next.add(platform);
+      }
+      return next;
+    });
+  }, []);
 
   // Merge all months from uploads and forecasts
   const months = useMemo<MonthColumn[]>(
@@ -103,43 +121,9 @@ export default function DemandWaterfallTable({
   }, [months]);
 
   const visiblePlatforms = useMemo(
-    () => PLATFORM_OPTIONS.filter((platform) => selectedPlatforms.includes(platform)),
-    [selectedPlatforms]
+    () => allPlatforms.filter((platform) => selectedPlatforms.includes(platform)),
+    [allPlatforms, selectedPlatforms]
   );
-
-  const saveBomCosts = () => {
-    const next: Record<string, number> = {};
-    PLATFORM_OPTIONS.forEach((p) => {
-      const v = Number(String(editingCosts[p] ?? "").replace(/,/g, ""));
-      next[p] = Number.isFinite(v) ? v : 0;
-    });
-    // Call the parent callback to sync to remote storage
-    if (onBomCostsChange) {
-      onBomCostsChange(next);
-    }
-    setIsEditingCosts(false);
-  };
-
-  // Handle click outside to close popup and position popup correctly
-  useEffect(() => {
-    if (!isEditingCosts) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        bomEditorPopupRef.current &&
-        bomEditorButtonRef.current &&
-        !bomEditorPopupRef.current.contains(event.target as Node) &&
-        !bomEditorButtonRef.current.contains(event.target as Node)
-      ) {
-        setIsEditingCosts(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isEditingCosts]);
 
   const effectivePeriods = useMemo(
     () => buildEffectivePeriods(salesOrdersList, forecastSummaryList),
@@ -163,15 +147,17 @@ export default function DemandWaterfallTable({
 
   const colWidths = useMemo(() => createColumnWidths(months), [months]);
 
-  const togglePlatform = (platform: string) => {
-    setSelectedPlatforms((prev) =>
-      prev.includes(platform) ? prev.filter((p) => p !== platform) : [...prev, platform]
-    );
-  };
 
+  // Calculate platforms per period (only platforms that exist in each period's data)
+  const platformsPerPeriod = useMemo(
+    () => getPlatformsPerPeriod(effectivePeriods, forecastSummaryList, visiblePlatforms),
+    [effectivePeriods, forecastSummaryList, visiblePlatforms],
+  );
+
+  // Calculate rows per period based on actual platforms in each period
   const rowsPerPeriod = useMemo(
-    () => getRowsPerPeriod(showTotals, visiblePlatforms.length),
-    [showTotals, visiblePlatforms],
+    () => platformsPerPeriod.map(count => getRowsPerPeriod(showTotals, count)),
+    [platformsPerPeriod, showTotals],
   );
 
   const periodCount = effectivePeriods.length;
@@ -377,83 +363,34 @@ export default function DemandWaterfallTable({
     <div className="space-y-3">
       <div className="flex items-center gap-3 p-2 bg-neutral-50 rounded-lg border border-neutral-200">
         <span className="text-xs font-medium text-neutral-600">Filter by Platforms:</span>
-        <div className="flex items-center gap-2">
-          {PLATFORM_OPTIONS.map((platform) => (
-            <label key={platform} className="flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded hover:bg-neutral-100">
-              <input
-                type="checkbox"
+        <div className="flex items-center gap-2 flex-wrap">
+          {allPlatforms.map((platform) => (
+            <Label
+              key={platform}
+              htmlFor={`platform-${platform}`}
+              className="flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded hover:bg-neutral-100"
+            >
+              <Checkbox
+                id={`platform-${platform}`}
                 checked={selectedPlatforms.includes(platform)}
-                onChange={() => togglePlatform(platform)}
-                className="w-3.5 h-3.5 text-blue-600 border-neutral-300 rounded focus:ring-1 focus:ring-blue-500"
+                onCheckedChange={() => togglePlatform(platform)}
               />
               <span className="text-xs text-neutral-700">{platform}</span>
-            </label>
+            </Label>
           ))}
         </div>
         <div className="h-4 w-px bg-neutral-300 mx-1" />
-        <label className="flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded hover:bg-neutral-100">
-          <input
-            type="checkbox"
+        <Label
+          htmlFor="show-totals"
+          className="flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded hover:bg-neutral-100"
+        >
+          <Checkbox
+            id="show-totals"
             checked={showTotals}
-            onChange={(e) => setShowTotals(e.target.checked)}
-            className="w-3.5 h-3.5 text-blue-600 border-neutral-300 rounded focus:ring-1 focus:ring-blue-500"
+            onCheckedChange={(checked) => setShowTotals(checked === true)}
           />
           <span className="text-xs text-neutral-700">Totals</span>
-        </label>
-        <div className="ml-auto relative" style={{ zIndex: 1000 }}>
-          <button
-            ref={bomEditorButtonRef}
-            className="inline-flex items-center rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50"
-            onClick={() => {
-              setEditingCosts((prev) => {
-                const next: Record<string, string> = { ...prev };
-                PLATFORM_OPTIONS.forEach((p) => (next[p] = String(resolvedBomCosts[p] ?? 0)));
-                return next;
-              });
-              setIsEditingCosts((v) => !v);
-            }}
-          >
-            Edit BOM Costs (RM)
-          </button>
-
-          {isEditingCosts && (
-            <div
-              ref={bomEditorPopupRef}
-              className="absolute right-0 top-full mt-2 min-w-[280px] p-2 rounded-md border border-neutral-300 bg-white shadow-lg z-[1001]"
-            >
-              <div className="space-y-2">
-                {PLATFORM_OPTIONS.map((p) => (
-                  <div key={`cost-${p}`} className="flex items-center gap-2">
-                    <span className="w-12 text-xs text-neutral-700">{p}</span>
-                    <input
-                      type="number"
-                      step="1"
-                      className="flex-1 rounded border border-neutral-300 px-2 py-1 text-xs"
-                      value={editingCosts[p] ?? ""}
-                      onChange={(e) =>
-                        setEditingCosts((prev) => ({ ...prev, [p]: e.target.value }))
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2 pt-2 border-t border-neutral-200 flex items-center gap-2">
-                <button
-                  className="flex-1 rounded-md bg-blue-600 text-white px-2 py-1 text-xs hover:bg-blue-700"
-                  onClick={saveBomCosts}
-                >
-                  Save
-                </button>
-                <button
-                  className="flex-1 rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 bg-white hover:bg-neutral-50"
-                  onClick={() => setIsEditingCosts(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        </Label>
       </div>
 
       <style>{`

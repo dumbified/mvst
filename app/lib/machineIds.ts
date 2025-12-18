@@ -1,4 +1,4 @@
-import { PlatformKey, PART_NUMBER_TO_PLATFORM } from './constants';
+import { PlatformKey, getPartNumberToPlatform } from './constants';
 
 export type MachineIdData = {
   jobPart: string;
@@ -51,7 +51,8 @@ function normalizeBucket(bucket: string): string {
  */
 function getPlatformFromJobPart(jobPart: string): PlatformKey | null {
   const normalizedPart = jobPart.trim().toLowerCase();
-  return PART_NUMBER_TO_PLATFORM[normalizedPart] || null;
+  const partNumberToPlatform = getPartNumberToPlatform();
+  return partNumberToPlatform[normalizedPart] || null;
 }
 
 /**

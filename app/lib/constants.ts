@@ -40,3 +40,47 @@ export const DEFAULT_BOM_COSTS: Record<string, number> = {
   "TRS+": 390193,
 };
 
+/**
+ * Get settings-aware part number to platform mapping
+ * Falls back to default constants if settings are not loaded
+ */
+export function getPartNumberToPlatform(): Record<string, PlatformKey> {
+  // Try to import the cache (only works in client components)
+  if (typeof window !== 'undefined') {
+    try {
+      // Dynamic import to avoid circular dependencies
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getCachedSettings } = require('../hooks/useSettings');
+      const settings = getCachedSettings();
+      if (settings?.partNumberToPlatform) {
+        return settings.partNumberToPlatform;
+      }
+    } catch {
+      // Fall through to defaults
+    }
+  }
+  return PART_NUMBER_TO_PLATFORM;
+}
+
+/**
+ * Get settings-aware BOM costs
+ * Falls back to default constants if settings are not loaded
+ */
+export function getBomCosts(): Record<string, number> {
+  // Try to import the cache (only works in client components)
+  if (typeof window !== 'undefined') {
+    try {
+      // Dynamic import to avoid circular dependencies
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getCachedSettings } = require('../hooks/useSettings');
+      const settings = getCachedSettings();
+      if (settings?.bomCosts) {
+        return settings.bomCosts;
+      }
+    } catch {
+      // Fall through to defaults
+    }
+  }
+  return DEFAULT_BOM_COSTS;
+}
+

@@ -9,17 +9,22 @@ import { useWaterfallState } from "./hooks/useWaterfallState";
 import { useWaterfallUploads } from "./hooks/useWaterfallUploads";
 import { useDateEditor } from "./hooks/useDateEditor";
 import { useClickOutside } from "./hooks/useClickOutside";
+import { useSettings } from "./hooks/useSettings";
 import { SalesOrderSummary } from "./lib/salesOrders";
 import { ForecastSummary } from "./lib/forecasts";
 import { loadSharedWaterfallState, saveSharedWaterfallState } from "./lib/stateStorage";
 import { sortPeriodsByUploadDate } from "./lib/dateUtils";
 import { DEFAULT_BOM_COSTS } from "./lib/constants";
 import { setLocalStorageTimestamp } from "./lib/localStorageUtils";
+import Link from "next/link";
 
 export default function Home() {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const filterMenuRef = useRef<HTMLDivElement>(null);
+
+  // Load settings on app start
+  useSettings();
 
   // Use custom hooks for state management
   const {
@@ -73,30 +78,6 @@ export default function Home() {
 
   // Handle click outside for filter menu
   useClickOutside(filterMenuRef, () => setShowFilterMenu(false), showFilterMenu);
-
-  const handleBomCostsChange = useCallback(
-    async (newBomCosts: Record<string, number>) => {
-      setBomCosts(newBomCosts);
-      const updatedAt = new Date().toISOString();
-
-      // Update localStorage immediately
-      try {
-        localStorage.setItem("mvst_bom_costs", JSON.stringify(newBomCosts));
-      } catch {
-        // ignore
-      }
-      setLocalStorageTimestamp(updatedAt);
-      
-      // Save to remote storage with updated timestamp
-      await saveSharedWaterfallState({
-        salesOrdersList,
-        forecastSummaryList,
-        bomCosts: newBomCosts,
-        updatedAt,
-      });
-    },
-    [forecastSummaryList, salesOrdersList, setBomCosts],
-  );
 
   const handleDeleteByDate = useCallback(
     async (dateLabel: string) => {
@@ -200,12 +181,12 @@ export default function Home() {
     <main className="min-h-screen p-6 md:p-10 flex flex-col gap-6 bg-white">
       <header className="space-y-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
         <h1 className="text-xl md:text-2xl font-semibold">MVS-T Demand Waterfall</h1>
-        <a
+        <Link
           href="/forecast-accuracy"
-          className="inline-flex items-center rounded-md border border-emerald-500 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+          className="underline text-blue-500 hover:text-blue-700"
         >
-          View Forecast Accuracy
-        </a>
+          View Forecast Accuracy →
+        </Link>
       </header>
       <section className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
@@ -297,6 +278,31 @@ export default function Home() {
                 />
               </svg>
             </button>
+            <a
+              href="/settings"
+              className="inline-flex items-center justify-center rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-medium text-neutral-600 bg-white hover:bg-neutral-50 transition-colors"
+              title="Settings"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+                className="w-4 h-4"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.89 3.31.876 2.42 2.42a1.724 1.724 0 001.065 2.572c1.757.427 1.757 2.925 0 3.352a1.724 1.724 0 00-1.065 2.572c.89 1.543-.877 3.31-2.42 2.42a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.89-3.31-.877-2.42-2.42a1.724 1.724 0 00-1.065-2.572c-1.757-.427-1.757-2.925 0-3.352a1.724 1.724 0 001.065-2.572c-.89-1.544.877-3.31 2.42-2.42.996.574 2.248.25 2.573-1.066z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+            </a>
           </div>
         </div>
         <div className="overflow-auto rounded-lg border border-neutral-200/60 bg-white">
@@ -304,7 +310,6 @@ export default function Home() {
             salesOrdersList={filteredSalesOrdersList}
             forecastSummaryList={filteredForecastSummaryList}
             bomCosts={bomCosts}
-            onBomCostsChange={handleBomCostsChange}
             editMode={editMode}
             onDateEdit={handleDateEdit}
             onDateDelete={handleDateDelete}

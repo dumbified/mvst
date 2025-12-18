@@ -1,4 +1,4 @@
-import { PlatformKey, PLATFORM_LABELS, MONTH_ABBREVIATIONS, PART_NUMBER_TO_PLATFORM } from './constants';
+import { PlatformKey, PLATFORM_LABELS, MONTH_ABBREVIATIONS, PART_NUMBER_TO_PLATFORM, getPartNumberToPlatform } from './constants';
 
 export type SalesOrderBucket = {
   quantity: number;
@@ -12,7 +12,7 @@ export type SalesOrderBucket = {
 export type SalesOrderSummary = {
   uploadDateLabel: string;
   months: { key: string; label: string }[];
-  totals: Record<PlatformKey, Record<string, SalesOrderBucket>>;
+  totals: Record<string, Record<string, SalesOrderBucket>>; // Changed from PlatformKey to string to support dynamic platforms
 };
 
 // Re-export for backward compatibility
@@ -176,12 +176,13 @@ export const parseSalesOrdersCsv = (
   const monthSet = new Set<string>();
   const uploadMonthKey = monthKeyFromDate(new Date(uploadDate.getFullYear(), uploadDate.getMonth(), 1));
 
+  const partNumberToPlatform = getPartNumberToPlatform();
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
     if (!line.trim()) continue;
     const cells = parseDelimitedLine(line, delimiter);
     const orderPartRaw = (cells[orderPartIndex] ?? "").trim().toLowerCase();
-    const platform = PART_NUMBER_TO_PLATFORM[orderPartRaw];
+    const platform = partNumberToPlatform[orderPartRaw];
     if (!platform) continue;
 
     // Filter out void status if status column exists
