@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Form } from "@/components/ui/form";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -21,12 +22,79 @@ import { PlatformKey, DEFAULT_BOM_COSTS, PART_NUMBER_TO_PLATFORM } from "../lib/
 import { saveSettings, type AppSettings } from "../lib/storage/settingsStorage";
 import { setCachedSettings, useSettings } from "../hooks/useSettings";
 
+// Separate component for BOM cost input to prevent re-render issues
+function BomCostInput({ 
+  platform, 
+  value, 
+  onChange 
+}: { 
+  platform: string; 
+  value: number; 
+  onChange: (platform: string, value: string) => void;
+}) {
+  const [localValue, setLocalValue] = useState<string>(
+    Number.isFinite(value) && value !== 0 ? value.toString() : ""
+  );
+  const [isFocused, setIsFocused] = useState(false);
+  const prevValueRef = useRef<number>(value);
+
+  // Update local value when prop changes (e.g., after refresh), but only if not focused
+  // This prevents cursor jumps while the user is typing
+  useEffect(() => {
+    // Only sync if the value actually changed and input is not focused
+    if (!isFocused && prevValueRef.current !== value) {
+      setLocalValue(Number.isFinite(value) && value !== 0 ? value.toString() : "");
+      prevValueRef.current = value;
+    }
+  }, [value, isFocused]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    setLocalValue(newValue);
+    onChange(platform, newValue);
+  };
+
+  const handleFocus = () => {
+    setIsFocused(true);
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    // Validate on blur - if empty or invalid, set to 0
+    if (localValue === "" || isNaN(parseFloat(localValue))) {
+      setLocalValue("");
+      onChange(platform, "0");
+    } else {
+      // Ensure the value is properly formatted
+      const numValue = parseFloat(localValue);
+      if (!Number.isNaN(numValue)) {
+        setLocalValue(numValue.toString());
+        prevValueRef.current = numValue;
+      }
+    }
+  };
+
+  return (
+    <Input
+      type="number"
+      value={localValue}
+      onChange={handleChange}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      placeholder="0"
+      step="0.01"
+      className="w-full text-xs h-7 px-2 py-0.5"
+    />
+  );
+}
+
 export default function SettingsPage() {
   const [partNumberMappings, setPartNumberMappings] = useState<Array<{ partNumber: string; platform: PlatformKey }>>([]);
   const [bomCosts, setBomCosts] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [mappingToDelete, setMappingToDelete] = useState<number | null>(null);
+  const hasRefreshedOnMount = useRef(false);
   
   // React Hook Form (used mainly for structure & submit handling)
   const form = useForm({
@@ -34,7 +102,7 @@ export default function SettingsPage() {
   });
   
   // Load settings using the hook
-  const { loading, settings } = useSettings();
+  const { loading, settings, refreshSettings } = useSettings();
 
   useEffect(() => {
     if (!loading && settings) {
@@ -55,6 +123,17 @@ export default function SettingsPage() {
       setBomCosts(DEFAULT_BOM_COSTS);
     }
   }, [loading, settings]);
+
+  // Refresh settings once when component mounts to ensure we have the latest from Supabase
+  // This ensures that if settings were updated elsewhere (e.g., redownloaded from backup),
+  // they will be immediately reflected
+  useEffect(() => {
+    // Wait for initial load to complete, then refresh once to get latest from Supabase
+    if (!loading && !hasRefreshedOnMount.current) {
+      hasRefreshedOnMount.current = true;
+      refreshSettings();
+    }
+  }, [loading, refreshSettings]);
 
   const handleAddPartNumberMapping = () => {
     setPartNumberMappings([...partNumberMappings, { partNumber: "", platform: "TH3K" }]);
@@ -79,16 +158,26 @@ export default function SettingsPage() {
     setPartNumberMappings(updated);
   };
 
-  const handleUpdateBomCost = (platform: string, value: string) => {
-    const numValue = parseFloat(value);
-    if (!Number.isNaN(numValue)) {
-      setBomCosts({ ...bomCosts, [platform]: numValue });
-    } else if (value === "") {
-      const updated = { ...bomCosts };
-      delete updated[platform];
-      setBomCosts(updated);
-    }
-  };
+  const handleUpdateBomCost = useCallback((platform: string, value: string) => {
+    setBomCosts((prev) => {
+      const updated = { ...prev };
+      
+      // Allow empty string for intermediate typing states
+      if (value === "" || value === "-" || value === ".") {
+        // Keep the platform key but don't update the value yet
+        // This allows the user to type freely
+        return prev;
+      }
+
+      // Try to parse the value
+      const numValue = parseFloat(value);
+      if (!Number.isNaN(numValue)) {
+        updated[platform] = numValue;
+      }
+      
+      return updated;
+    });
+  }, []);
 
   const handleAddBomPlatform = () => {
     // Create a temporary unique key; user can rename it in the input
@@ -152,6 +241,8 @@ export default function SettingsPage() {
       if (success) {
         // Update the cache so other parts of the app can use the new settings immediately
         setCachedSettings(settings);
+        // Refresh settings to ensure we have the latest from Supabase
+        await refreshSettings();
         // Update mappings to remove empty ones
         setPartNumberMappings(validMappings);
         toast.success("Settings saved successfully");
@@ -231,21 +322,21 @@ export default function SettingsPage() {
                       partNumberMappings.map((mapping, index) => (
                         <tr key={index} className="border-b border-neutral-100 hover:bg-neutral-50">
                           <td className="px-4 py-2">
-                            <input
+                            <Input
                               type="text"
                               value={mapping.partNumber}
                               onChange={(e) => handleUpdatePartNumberMapping(index, "partNumber", e.target.value)}
                               placeholder="e.g., 9300-ai001"
-                              className="w-full rounded border border-neutral-300 px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                              className="w-full text-xs h-7 px-2 py-0.5"
                             />
                           </td>
                           <td className="px-4 py-2">
-                            <input
+                            <Input
                               type="text"
                               value={mapping.platform}
                               onChange={(e) => handleUpdatePartNumberMapping(index, "platform", e.target.value)}
                               placeholder="e.g., TH3K"
-                              className="w-full rounded border border-neutral-300 px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                              className="w-full text-xs h-7 px-2 py-0.5"
                             />
                           </td>
                           <td className="px-4 py-2">
@@ -310,22 +401,19 @@ export default function SettingsPage() {
                       Object.entries(bomCosts).map(([platform, cost]) => (
                         <tr key={platform} className="border-b border-neutral-100 hover:bg-neutral-50">
                           <td className="px-4 py-2">
-                            <input
+                            <Input
                               type="text"
                               value={platform}
                               onChange={(e) => handleUpdateBomPlatformName(platform, e.target.value)}
                               placeholder="e.g., TH3K"
-                              className="w-full rounded border border-neutral-300 px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                              className="w-full text-xs h-7 px-2 py-0.5"
                             />
                           </td>
                           <td className="px-4 py-2">
-                            <input
-                              type="number"
-                              value={Number.isFinite(cost) ? cost : ""}
-                              onChange={(e) => handleUpdateBomCost(platform, e.target.value)}
-                              placeholder="0"
-                              step="0.01"
-                              className="w-full rounded border border-neutral-300 px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                            <BomCostInput
+                              platform={platform}
+                              value={cost}
+                              onChange={handleUpdateBomCost}
                             />
                           </td>
                           <td className="px-4 py-2">
