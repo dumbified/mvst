@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createBackup, cleanupOldBackups } from "../../lib/storage/backup";
 
 /**
+ * Checks if backup API key is configured
+ */
+function isBackupApiKeyConfigured(): boolean {
+  return !!process.env.BACKUP_API_KEY;
+}
+
+/**
  * API route for creating backups
  * This can be called by:
  * 1. Cron jobs (Vercel Cron, external cron services)
@@ -15,15 +22,17 @@ import { createBackup, cleanupOldBackups } from "../../lib/storage/backup";
 export async function POST(request: NextRequest) {
   try {
     // Optional: Add authentication/authorization here
-    // Example: Check for API key in headers
-    const authHeader = request.headers.get("authorization");
-    const expectedKey = process.env.BACKUP_API_KEY;
-    
-    if (expectedKey && authHeader !== `Bearer ${expectedKey}`) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    // Only require auth if BACKUP_API_KEY is configured
+    if (isBackupApiKeyConfigured()) {
+      const authHeader = request.headers.get("authorization");
+      const expectedKey = process.env.BACKUP_API_KEY;
+      
+      if (authHeader !== `Bearer ${expectedKey}`) {
+        return NextResponse.json(
+          { error: "Unauthorized" },
+          { status: 401 }
+        );
+      }
     }
 
     // Create backup

@@ -23,7 +23,7 @@ export default function Home() {
   const [editMode, setEditMode] = useState(false);
   const filterMenuRef = useRef<HTMLDivElement>(null);
 
-  // Load settings on app start
+  // Load settings on app start (side effect: caches settings for use across the app)
   useSettings();
 
   // Use custom hooks for state management
@@ -109,27 +109,12 @@ export default function Home() {
     [bomCosts, forecastSummaryList, salesOrdersList, setForecastSummaryList, setSalesOrdersList],
   );
 
-  const handleDateDelete = useCallback(
-    (dateLabel: string) => {
-    handleDeleteByDate(dateLabel);
-    },
-    [handleDeleteByDate]
-  );
 
   const handleClearLocalStorage = useCallback(async () => {
     localStorage.removeItem("mvst_salesOrdersList");
     localStorage.removeItem("mvst_forecastSummary");
     localStorage.removeItem("mvst_bom_costs");
     localStorage.removeItem("mvst_state_updatedAt");
-    
-    // Log the results
-    const result = {
-      "mvst_salesOrdersList": localStorage.getItem("mvst_salesOrdersList"),
-      "mvst_forecastSummary": localStorage.getItem("mvst_forecastSummary"),
-      "mvst_bom_costs": localStorage.getItem("mvst_bom_costs"),
-      "mvst_state_updatedAt": localStorage.getItem("mvst_state_updatedAt"),
-    };
-    console.log("LocalStorage cleared. Remaining values:", result);
     
     // Load data from remote storage
     try {
@@ -156,17 +141,11 @@ export default function Home() {
           // ignore storage errors
         }
         
-        console.log("Data reloaded from remote storage:", {
-          salesOrders: sortedSales.length,
-          forecasts: sortedForecasts.length,
-          bomCosts: remoteBomCosts,
-        });
       } else {
         // No remote data, reset to empty/default values
         setSalesOrdersList([]);
         setForecastSummaryList([]);
         setBomCosts(DEFAULT_BOM_COSTS);
-        console.log("No remote data found. State reset to empty.");
       }
     } catch (error) {
       console.error("Failed to reload data from remote storage:", error);
@@ -312,7 +291,7 @@ export default function Home() {
             bomCosts={bomCosts}
             editMode={editMode}
             onDateEdit={handleDateEdit}
-            onDateDelete={handleDateDelete}
+            onDateDelete={handleDeleteByDate}
           />
         </div>
       </section>

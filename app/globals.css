@@ -43,11 +43,6 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Force white background in dark mode as well */
-  }
-}
 
 body {
   background: #ffffff; /* keep body white regardless of scheme */

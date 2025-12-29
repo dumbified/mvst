@@ -114,7 +114,6 @@ function compareSalesOrders(
       
       // Check if job appears in an earlier month and is shipped
       let foundInEarlierMonth = false;
-      let foundInEarlierMonthKey = "";
       let isShippedInEarlierMonth = false;
       
       // Check all months in current upload for this platform
@@ -132,7 +131,6 @@ function compareSalesOrders(
           } else if (currTime < prevTime) {
             // Job moved to an earlier month
             foundInEarlierMonth = true;
-            foundInEarlierMonthKey = currMonthKey;
             // Check if it's marked as shipped in the current upload
             isShippedInEarlierMonth = 
               (currBucket.jobStatus && currBucket.jobStatus[jobNumber] === "shipped") ||

@@ -1,6 +1,12 @@
-import { getSupabase } from "./supabaseClient";
+import { getSupabase, getSupabaseServiceRole } from "./supabaseClientServer";
 import { SharedWaterfallState } from "./stateStorage";
-import { loadJsonFromStorage } from "./supabaseStorage";
+import { loadJsonFromStorage } from "./supabaseStorageServer";
+
+type StorageError = { 
+  message?: string; 
+  statusCode?: string | number;
+  status?: string | number;
+};
 
 const STATE_BUCKET = process.env.NEXT_PUBLIC_WATERFALL_STATE_BUCKET ?? "uploads";
 const STATE_PATH = "shared/waterfall-state.json";
@@ -49,7 +55,17 @@ export async function createBackup(): Promise<{ success: boolean; backupPath?: s
     const backupPath = `${BACKUP_FOLDER}/${backupFileName}`;
 
     // Upload backup to Supabase storage
-    const supabase = getSupabase();
+    // Try service role client first (bypasses RLS), fallback to anon client
+    const supabaseService = getSupabaseServiceRole();
+    const supabase = supabaseService || getSupabase();
+    const isUsingServiceRole = !!supabaseService;
+    
+    // Log which client is being used (for debugging)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[Backup] Using ${isUsingServiceRole ? 'service role' : 'anon'} client`);
+      console.log(`[Backup] Bucket: ${STATE_BUCKET}, Path: ${backupPath}`);
+    }
+    
     const blob = new Blob([JSON.stringify(currentState, null, 2)], { 
       type: "application/json" 
     });
@@ -63,13 +79,62 @@ export async function createBackup(): Promise<{ success: boolean; backupPath?: s
 
     if (error) {
       // If file already exists, that's okay - we use timestamp so collisions are rare
-      if (error.message?.includes("already exists")) {
+      if (error.message?.includes("already exists") || error.message?.includes("duplicate")) {
+        console.log(`[Backup] File already exists: ${backupPath}`);
         return {
           success: true,
           backupPath,
         };
       }
+      
+      // Handle RLS policy violations - provide helpful error message
+      const storageError = error as StorageError;
+      const errorStatus = storageError.statusCode || storageError.status;
+      const isRlsError = 
+        errorStatus === '403' || 
+        errorStatus === 403 ||
+        error.message?.toLowerCase().includes("row-level security") || 
+        error.message?.toLowerCase().includes("rls") ||
+        error.message?.toLowerCase().includes("policy") ||
+        error.message?.toLowerCase().includes("permission denied");
+      
+      if (isRlsError) {
+        const hasServiceRoleKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+        let solution: string;
+        
+        if (isUsingServiceRole && hasServiceRoleKey) {
+          solution = `Service role key is configured and being used, but still getting RLS error. This suggests:
+1. The service role key might be incorrect - verify it in Supabase Dashboard > Settings > API
+2. The bucket may have bucket-level policies that restrict access
+3. Check Supabase Dashboard > Storage > Policies for the "${STATE_BUCKET}" bucket
+4. Ensure the service role key has the correct format (starts with "eyJ...")`;
+        } else if (hasServiceRoleKey && !isUsingServiceRole) {
+          solution = `Service role key is set in environment but not being used. Check if SUPABASE_SERVICE_ROLE_KEY is correctly loaded.`;
+        } else {
+          solution = `Set SUPABASE_SERVICE_ROLE_KEY in .env.local to bypass RLS for server-side backups.
+Alternatively, update RLS policies in Supabase Dashboard > Storage > Policies to allow uploads to the '${BACKUP_FOLDER}' folder.`;
+        }
+        
+        console.error(`[Backup] RLS Error: ${error.message}`);
+        console.error(`[Backup] Using service role: ${isUsingServiceRole}, Has key: ${hasServiceRoleKey}`);
+        
+        return {
+          success: false,
+          error: `Permission denied (RLS): ${error.message}\n\n${solution}`,
+        };
+      }
+      
+      // Log other errors for debugging
+      console.error(`[Backup] Upload error:`, {
+        message: error.message,
+        statusCode: errorStatus,
+      });
+      
       throw error;
+    }
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[Backup] Successfully created backup: ${backupPath}`);
     }
 
     return {
@@ -77,7 +142,7 @@ export async function createBackup(): Promise<{ success: boolean; backupPath?: s
       backupPath,
     };
   } catch (error) {
-    console.error("Backup failed:", error);
+    console.error("[Backup] Backup failed:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
@@ -90,7 +155,10 @@ export async function createBackup(): Promise<{ success: boolean; backupPath?: s
  */
 async function listBackups(): Promise<string[]> {
   try {
-    const supabase = getSupabase();
+    // Try service role client first (bypasses RLS), fallback to anon client
+    const supabaseService = getSupabaseServiceRole();
+    const supabase = supabaseService || getSupabase();
+    
     const { data, error } = await supabase.storage
       .from(STATE_BUCKET)
       .list(BACKUP_FOLDER, {
@@ -98,7 +166,13 @@ async function listBackups(): Promise<string[]> {
       });
 
     if (error) {
-      console.error("Failed to list backups:", error);
+      // If folder doesn't exist yet, that's okay - return empty array
+      const storageError = error as StorageError;
+      const errorStatus = storageError.statusCode || storageError.status;
+      if (error.message?.includes("not found") || errorStatus === '404' || errorStatus === 404) {
+        return [];
+      }
+      console.error("[Backup] Failed to list backups:", error);
       return [];
     }
 
@@ -106,7 +180,7 @@ async function listBackups(): Promise<string[]> {
       .filter((file) => file.name.startsWith("waterfall-state-backup_") && file.name.endsWith(".json"))
       .map((file) => file.name);
   } catch (error) {
-    console.error("Failed to list backups:", error);
+    console.error("[Backup] Failed to list backups:", error);
     return [];
   }
 }
@@ -150,7 +224,9 @@ export async function cleanupOldBackups(): Promise<{ deleted: number; error?: st
     }
 
     // Delete old backups
-    const supabase = getSupabase();
+    // Try service role client first (bypasses RLS), fallback to anon client
+    const supabaseService = getSupabaseServiceRole();
+    const supabase = supabaseService || getSupabase();
     const pathsToDelete = backupsToDelete.map(
       (backup) => `${BACKUP_FOLDER}/${backup.name}`
     );
@@ -160,7 +236,16 @@ export async function cleanupOldBackups(): Promise<{ deleted: number; error?: st
       .remove(pathsToDelete);
 
     if (error) {
-      throw error;
+      // Log error but don't fail completely - cleanup is non-critical
+      console.error(`[Backup] Failed to delete old backups:`, error);
+      return {
+        deleted: 0,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+
+    if (process.env.NODE_ENV === 'development' && backupsToDelete.length > 0) {
+      console.log(`[Backup] Deleted ${backupsToDelete.length} old backup(s)`);
     }
 
     return { deleted: backupsToDelete.length };

@@ -7,7 +7,7 @@ import { PART_NUMBER_TO_PLATFORM, DEFAULT_BOM_COSTS } from "../lib/core/constant
 // Module-level cache for settings
 let settingsCache: AppSettings | null = null;
 let settingsLoaded = false;
-let settingsListeners: Set<() => void> = new Set();
+const settingsListeners: Set<() => void> = new Set();
 
 export function getCachedSettings(): AppSettings | null {
   return settingsCache;

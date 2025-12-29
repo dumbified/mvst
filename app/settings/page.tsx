@@ -38,13 +38,17 @@ function BomCostInput({
   const [isFocused, setIsFocused] = useState(false);
   const prevValueRef = useRef<number>(value);
 
-  // Update local value when prop changes (e.g., after refresh), but only if not focused
+  // Update local value when prop changes externally (e.g., after refresh), but only if not focused
   // This prevents cursor jumps while the user is typing
+  // Use setTimeout to defer state update and avoid setState in effect warning
   useEffect(() => {
-    // Only sync if the value actually changed and input is not focused
     if (!isFocused && prevValueRef.current !== value) {
-      setLocalValue(Number.isFinite(value) && value !== 0 ? value.toString() : "");
       prevValueRef.current = value;
+      // Defer state update to avoid synchronous setState in effect
+      const timeoutId = setTimeout(() => {
+        setLocalValue(Number.isFinite(value) && value !== 0 ? value.toString() : "");
+      }, 0);
+      return () => clearTimeout(timeoutId);
     }
   }, [value, isFocused]);
 
