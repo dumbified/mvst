@@ -169,6 +169,12 @@ export const parseSalesOrdersCsv = (
   const statusIndex = normalizedHeaders.indexOf("status");
 
   if (orderPartIndex === -1 || shipByIndex === -1 || orderQtyIndex === -1) {
+    console.error("[Sales Orders] Missing required columns:", {
+      orderPartIndex,
+      shipByIndex,
+      orderQtyIndex,
+      normalizedHeaders,
+    });
     return null;
   }
 
@@ -177,28 +183,52 @@ export const parseSalesOrdersCsv = (
   const uploadMonthKey = monthKeyFromDate(new Date(uploadDate.getFullYear(), uploadDate.getMonth(), 1));
 
   const partNumberToPlatform = getPartNumberToPlatform();
+  let processedCount = 0;
+  let skippedCount = 0;
+  const skipReasons: Record<string, number> = {};
+  
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
     if (!line.trim()) continue;
     const cells = parseDelimitedLine(line, delimiter);
     const orderPartRaw = (cells[orderPartIndex] ?? "").trim().toLowerCase();
     const platform = partNumberToPlatform[orderPartRaw];
-    if (!platform) continue;
+    if (!platform) {
+      skippedCount++;
+      skipReasons["no_platform"] = (skipReasons["no_platform"] || 0) + 1;
+      continue;
+    }
 
     // Filter out void status if status column exists
     const rawStatus = statusIndex !== -1 ? (cells[statusIndex] ?? "").trim().toLowerCase() : "";
     if (rawStatus === "void") {
-        continue;
+      skippedCount++;
+      skipReasons["void_status"] = (skipReasons["void_status"] || 0) + 1;
+      continue;
     }
 
     const shipByDate = parseShipByDate(cells[shipByIndex] ?? "");
-    if (!shipByDate) continue;
+    if (!shipByDate) {
+      skippedCount++;
+      skipReasons["invalid_date"] = (skipReasons["invalid_date"] || 0) + 1;
+      continue;
+    }
 
     // Skip records earlier than the effective cutoff to keep dataset small and relevant
-    if (shipByDate < effectiveMinDate) continue;
+    if (shipByDate < effectiveMinDate) {
+      skippedCount++;
+      skipReasons["date_too_old"] = (skipReasons["date_too_old"] || 0) + 1;
+      continue;
+    }
 
     const quantity = sanitizeQuantity(cells[orderQtyIndex] ?? "");
-    if (!quantity) continue;
+    if (!quantity) {
+      skippedCount++;
+      skipReasons["zero_quantity"] = (skipReasons["zero_quantity"] || 0) + 1;
+      continue;
+    }
+    
+    processedCount++;
 
     const monthKey = monthKeyFromDate(shipByDate);
     // Keep all data regardless of upload month - allows showing data when date is changed to previous month
@@ -218,9 +248,6 @@ export const parseSalesOrdersCsv = (
 
     if (jobNumberIndex !== -1) {
       const jobNumber = (cells[jobNumberIndex] ?? "").trim();
-      if (jobNumber && !bucket.jobNumbers.includes(jobNumber)) {
-        bucket.jobNumbers.push(jobNumber);
-      }
       if (jobNumber) {
         const normalizedStatus =
           rawStatus === "shipped"
@@ -232,8 +259,35 @@ export const parseSalesOrdersCsv = (
                 : "other";
         if (!bucket.jobStatus) bucket.jobStatus = {};
         bucket.jobStatus[jobNumber] = normalizedStatus;
+        
+        // Only add job number to jobNumbers array if it's NOT shipped
+        // Shipped jobs should NOT appear in comments/demand waterfall
+        if (normalizedStatus !== "shipped") {
+          if (!bucket.jobNumbers.includes(jobNumber)) {
+            bucket.jobNumbers.push(jobNumber);
+          }
+        } else {
+          // If job is shipped, remove it from jobNumbers if it was previously added
+          // (handles case where same job appears in multiple uploads with different statuses)
+          const jobIndex = bucket.jobNumbers.indexOf(jobNumber);
+          if (jobIndex !== -1) {
+            bucket.jobNumbers.splice(jobIndex, 1);
+          }
+        }
       }
     }
+  }
+
+  // Log processing statistics for debugging
+  if (processedCount === 0 && lines.length > 1) {
+    console.warn("[Sales Orders] No rows processed. Statistics:", {
+      totalRows: lines.length - 1,
+      processed: processedCount,
+      skipped: skippedCount,
+      skipReasons,
+      effectiveMinDate: effectiveMinDate.toISOString(),
+      uploadDate: uploadDate.toISOString(),
+    });
   }
 
   // Always show from the upload month through the next 6 months (inclusive)

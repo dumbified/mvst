@@ -56,6 +56,8 @@ function compareSalesOrders(
   }
 
   // Build maps of previous and current jobs by platform/month
+  // IMPORTANT: Include ALL jobs from jobStatus (both open and shipped), not just jobNumbers
+  // This ensures we can track shipped jobs that disappeared
   const prevJobsByPlatformMonth = new Map<string, Set<string>>();
   const prevBucketsByPlatformMonth = new Map<string, SalesOrderBucket>();
   const prevMaxJobSeqByPlatform = new Map<PlatformKey, number>();
@@ -63,11 +65,18 @@ function compareSalesOrders(
   Object.entries(previous.totals).forEach(([platform, monthBuckets]) => {
     Object.entries(monthBuckets).forEach(([monthKey, bucket]) => {
       const key = `${platform}:${monthKey}`;
-      prevJobsByPlatformMonth.set(key, new Set(bucket.jobNumbers));
+      // Include all jobs from jobStatus (open, shipped, void, other) for comparison
+      const allPrevJobs = new Set<string>();
+      bucket.jobNumbers.forEach(job => allPrevJobs.add(job));
+      if (bucket.jobStatus) {
+        Object.keys(bucket.jobStatus).forEach(job => allPrevJobs.add(job));
+      }
+      prevJobsByPlatformMonth.set(key, allPrevJobs);
       prevBucketsByPlatformMonth.set(key, bucket);
 
       // Track the highest job number we've ever seen for this platform up to the previous upload
-      bucket.jobNumbers.forEach((jobNum) => {
+      // Check both jobNumbers and jobStatus to catch all jobs
+      allPrevJobs.forEach((jobNum) => {
         const seq = getJobSequence(jobNum);
         if (seq != null) {
           const p = platform as PlatformKey;
@@ -85,7 +94,13 @@ function compareSalesOrders(
   Object.entries(current.totals).forEach(([platform, monthBuckets]) => {
     Object.entries(monthBuckets).forEach(([monthKey, bucket]) => {
       const key = `${platform}:${monthKey}`;
-      currentJobsByPlatformMonth.set(key, new Set(bucket.jobNumbers));
+      // Include all jobs from jobStatus (both open and shipped) for comparison
+      const allCurrentJobs = new Set<string>();
+      bucket.jobNumbers.forEach(job => allCurrentJobs.add(job));
+      if (bucket.jobStatus) {
+        Object.keys(bucket.jobStatus).forEach(job => allCurrentJobs.add(job));
+      }
+      currentJobsByPlatformMonth.set(key, allCurrentJobs);
       currentBucketsByPlatformMonth.set(key, bucket);
     });
   });
@@ -157,15 +172,34 @@ function compareSalesOrders(
       } else if (foundInEarlierMonth && isShippedInEarlierMonth) {
         // Job moved to an earlier month and is marked as shipped in current upload
         // This means it was shipped (even if previous upload didn't have shipment status)
-        const avgQtyPerJob = prevBucket && prevBucket.jobNumbers.length > 0
-          ? prevBucket.quantity / prevBucket.jobNumbers.length
-          : 1;
+        // Find the current bucket where this job is marked as shipped
+        const currBucketWithJob = Object.values(current.totals[platform as PlatformKey] ?? {}).find(
+          (bucket) => bucket.jobNumbers.includes(jobNumber) || 
+                     (bucket.jobStatus && bucket.jobStatus[jobNumber] === "shipped")
+        );
+        
+        // Use shipped quantity from current bucket if available, otherwise estimate from previous
+        let quantity = 1;
+        if (currBucketWithJob && currBucketWithJob.shipped > 0) {
+          // Count shipped jobs in current bucket
+          let shippedJobCount = 0;
+          if (currBucketWithJob.jobStatus) {
+            shippedJobCount = Object.values(currBucketWithJob.jobStatus).filter(
+              (status) => status === "shipped"
+            ).length;
+          }
+          quantity = shippedJobCount > 0
+            ? currBucketWithJob.shipped / shippedJobCount
+            : currBucketWithJob.shipped;
+        } else if (prevBucket && prevBucket.jobNumbers.length > 0) {
+          quantity = prevBucket.quantity / prevBucket.jobNumbers.length;
+        }
         
         changes.push({
           type: "shipped",
           platform: platform as PlatformKey,
           monthKey,
-          quantity: Math.round(avgQtyPerJob),
+          quantity: Math.round(quantity),
           jobNumbers: [jobNumber],
           uploadDateLabel: current.uploadDateLabel,
         });
@@ -176,10 +210,21 @@ function compareSalesOrders(
           (prevBucket?.jobStatus && prevBucket.jobStatus[jobNumber] === "shipped") ||
           (!!prevBucket && prevBucket.shipped > 0);
         if (wasShipped) {
-          // Estimate quantity: use average shipped quantity per job
-          const avgShippedPerJob = prevBucket.jobNumbers.length > 0
-            ? prevBucket.shipped / prevBucket.jobNumbers.length
-            : 1;
+          // Calculate shipped quantity: count how many jobs were actually shipped in previous bucket
+          // Use jobStatus to count shipped jobs accurately
+          let shippedJobCount = 0;
+          if (prevBucket?.jobStatus) {
+            shippedJobCount = Object.values(prevBucket.jobStatus).filter(
+              (status) => status === "shipped"
+            ).length;
+          }
+          
+          // If we have shipped job count, use it; otherwise fall back to total shipped quantity
+          const avgShippedPerJob = shippedJobCount > 0
+            ? prevBucket.shipped / shippedJobCount
+            : prevBucket.shipped > 0
+              ? prevBucket.shipped
+              : 1;
 
           changes.push({
             type: "shipped",
@@ -229,16 +274,31 @@ function compareSalesOrders(
 
     if (shippedNow.length === 0) return;
 
-    // Estimate quantity using average per-job quantity from previous bucket (fallback to 1)
-    const avgQtyPerJob =
-      prevBucket.jobNumbers.length > 0 ? prevBucket.quantity / prevBucket.jobNumbers.length : 1;
+    // Calculate shipped quantity: use current bucket's shipped quantity divided by shipped jobs
+    // Count how many jobs are marked as shipped in current bucket
+    let shippedJobCount = 0;
+    if (currBucket.jobStatus) {
+      shippedJobCount = Object.values(currBucket.jobStatus).filter(
+        (status) => status === "shipped"
+      ).length;
+    }
+    
+    // Use current bucket's shipped quantity divided by shipped job count
+    // This gives us the actual shipped quantity per job
+    const avgShippedPerJob = shippedJobCount > 0
+      ? currBucket.shipped / shippedJobCount
+      : currBucket.shipped > 0
+        ? currBucket.shipped
+        : prevBucket.jobNumbers.length > 0
+          ? prevBucket.quantity / prevBucket.jobNumbers.length
+          : 1;
 
     shippedNow.forEach((jobNumber) => {
       changes.push({
         type: "shipped",
         platform: platform as PlatformKey,
         monthKey,
-        quantity: Math.round(avgQtyPerJob),
+        quantity: Math.round(avgShippedPerJob),
         jobNumbers: [jobNumber],
         uploadDateLabel: current.uploadDateLabel,
       });
@@ -285,11 +345,28 @@ function compareSalesOrders(
 
         const currentStatus = currentBucket?.jobStatus?.[jobNumber];
         if (currentStatus === "shipped") {
+          // Calculate shipped quantity from current bucket
+          let shippedQty = avgQtyPerJob;
+          if (currentBucket) {
+            let shippedJobCount = 0;
+            if (currentBucket.jobStatus) {
+              shippedJobCount = Object.values(currentBucket.jobStatus).filter(
+                (status) => status === "shipped"
+              ).length;
+            }
+            
+            if (shippedJobCount > 0 && currentBucket.shipped > 0) {
+              shippedQty = currentBucket.shipped / shippedJobCount;
+            } else if (currentBucket.shipped > 0) {
+              shippedQty = currentBucket.shipped;
+            }
+          }
+          
           changes.push({
             type: "shipped",
             platform: platform as PlatformKey,
             monthKey,
-            quantity: Math.round(avgQtyPerJob),
+            quantity: Math.round(shippedQty),
             jobNumbers: [jobNumber],
             uploadDateLabel: current.uploadDateLabel,
           });

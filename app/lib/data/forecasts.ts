@@ -126,6 +126,12 @@ export const parseForecastCsv = (
   const inactiveIndex = normalizedHeaders.indexOf("forecastinactive");
 
   if (partIndex === -1 || dateIndex === -1 || qtyIndex === -1) {
+    console.error("[Forecast] Missing required columns:", {
+      partIndex,
+      dateIndex,
+      qtyIndex,
+      normalizedHeaders,
+    });
     return null;
   }
 
@@ -133,6 +139,10 @@ export const parseForecastCsv = (
   const monthSet = new Set<string>();
   const uploadMonthKey = monthKeyFromDate(new Date(uploadDate.getFullYear(), uploadDate.getMonth(), 1));
   const endKey = addMonthsToKey(uploadMonthKey, 6);
+
+  let processedCount = 0;
+  let skippedCount = 0;
+  const skipReasons: Record<string, number> = {};
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
@@ -144,6 +154,8 @@ export const parseForecastCsv = (
       const inactiveValue = (cells[inactiveIndex] ?? "").trim().toLowerCase();
       // Skip rows where Forecast Inactive is not False (could be "True", "1", "Yes", etc.)
       if (inactiveValue !== "false" && inactiveValue !== "") {
+        skippedCount++;
+        skipReasons["inactive"] = (skipReasons["inactive"] || 0) + 1;
         continue;
       }
     }
@@ -151,13 +163,25 @@ export const parseForecastCsv = (
     const partRaw = (cells[partIndex] ?? "").trim().toLowerCase();
     const partNumberToPlatform = getPartNumberToPlatform();
     const platform = partNumberToPlatform[partRaw];
-    if (!platform) continue;
+    if (!platform) {
+      skippedCount++;
+      skipReasons["no_platform"] = (skipReasons["no_platform"] || 0) + 1;
+      continue;
+    }
 
     const forecastDate = parseForecastDate(cells[dateIndex] ?? "");
-    if (!forecastDate) continue;
+    if (!forecastDate) {
+      skippedCount++;
+      skipReasons["invalid_date"] = (skipReasons["invalid_date"] || 0) + 1;
+      continue;
+    }
 
     const quantity = sanitizeQuantity(cells[qtyIndex] ?? "");
-    if (!quantity) continue;
+    if (!quantity) {
+      skippedCount++;
+      skipReasons["zero_quantity"] = (skipReasons["zero_quantity"] || 0) + 1;
+      continue;
+    }
 
     const monthKey = monthKeyFromDate(forecastDate);
     if (compareMonthKeys(monthKey, uploadMonthKey) >= 0 && compareMonthKeys(monthKey, endKey) <= 0) {
@@ -167,7 +191,23 @@ export const parseForecastCsv = (
         totals[platform] = {};
       }
       totals[platform][monthKey] = (totals[platform][monthKey] ?? 0) + quantity;
+      processedCount++;
+    } else {
+      skippedCount++;
+      skipReasons["date_out_of_range"] = (skipReasons["date_out_of_range"] || 0) + 1;
     }
+  }
+
+  // Log processing statistics for debugging
+  if (processedCount === 0 && lines.length > 1) {
+    console.warn("[Forecast] No rows processed. Statistics:", {
+      totalRows: lines.length - 1,
+      processed: processedCount,
+      skipped: skippedCount,
+      skipReasons,
+      uploadMonthKey,
+      endKey,
+    });
   }
 
   // Always show from the upload month through the next 6 months (inclusive)
