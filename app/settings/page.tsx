@@ -95,6 +95,8 @@ function BomCostInput({
 export default function SettingsPage() {
   const [partNumberMappings, setPartNumberMappings] = useState<Array<{ partNumber: string; platform: PlatformKey }>>([]);
   const [bomCosts, setBomCosts] = useState<Record<string, number>>({});
+  const [googleSheetsUrl, setGoogleSheetsUrl] = useState<string>('');
+  const [googleSheetName, setGoogleSheetName] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [mappingToDelete, setMappingToDelete] = useState<number | null>(null);
@@ -117,6 +119,8 @@ export default function SettingsPage() {
       }));
       setPartNumberMappings(mappings);
       setBomCosts(settings.bomCosts);
+      setGoogleSheetsUrl(settings.googleSheetsUrl || '');
+      setGoogleSheetName(settings.googleSheetName || '');
     } else if (!loading && !settings) {
       // Use defaults from constants
       const defaultMappings = Object.entries(PART_NUMBER_TO_PLATFORM).map(([partNumber, platform]) => ({
@@ -125,6 +129,8 @@ export default function SettingsPage() {
       }));
       setPartNumberMappings(defaultMappings);
       setBomCosts(DEFAULT_BOM_COSTS);
+      setGoogleSheetsUrl('');
+      setGoogleSheetName('');
     }
   }, [loading, settings]);
 
@@ -237,6 +243,8 @@ export default function SettingsPage() {
       const settings: AppSettings = {
         partNumberToPlatform,
         bomCosts,
+        googleSheetsUrl: googleSheetsUrl.trim() || undefined,
+        googleSheetName: googleSheetName.trim() || undefined,
         updatedAt: new Date().toISOString(),
       };
 
@@ -359,6 +367,52 @@ export default function SettingsPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            {/* Google Sheets Configuration */}
+            <div className="space-y-3">
+              <div>
+                <h2 className="text-lg font-medium">Google Sheets Configuration</h2>
+                <p className="text-xs text-neutral-500 mt-1">
+                  Configure the Google Sheets URL and sheet name for the forecast job number data. Leave empty to use default values.
+                </p>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="googleSheetsUrl" className="text-xs font-medium text-neutral-700">
+                    Google Sheets URL
+                  </Label>
+                  <Input
+                    id="googleSheetsUrl"
+                    type="url"
+                    value={googleSheetsUrl}
+                    onChange={(e) => setGoogleSheetsUrl(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit"
+                    className="text-xs h-8 px-2 py-1"
+                  />
+                  <p className="text-[11px] text-neutral-500">
+                    Paste the full Google Sheets URL or just the spreadsheet ID
+                  </p>
+                </div>
+                
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="googleSheetName" className="text-xs font-medium text-neutral-700">
+                    Sheet Name
+                  </Label>
+                  <Input
+                    id="googleSheetName"
+                    type="text"
+                    value={googleSheetName}
+                    onChange={(e) => setGoogleSheetName(e.target.value)}
+                    placeholder="Main_Simulation"
+                    className="text-xs h-8 px-2 py-1"
+                  />
+                  <p className="text-[11px] text-neutral-500">
+                    The sheet that contains the forecast buckets
+                  </p>
+                </div>
               </div>
             </div>
 

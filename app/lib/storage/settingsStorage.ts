@@ -9,6 +9,8 @@ const SETTINGS_PATH = "shared/settings.json";
 export type AppSettings = {
   partNumberToPlatform: Record<string, PlatformKey>;
   bomCosts: Record<string, number>;
+  googleSheetsUrl?: string;
+  googleSheetName?: string;
   updatedAt: string;
 };
 

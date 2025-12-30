@@ -30,15 +30,39 @@ export type UploadChanges = {
   };
 };
 
-// Extract a numeric sequence from a job number (e.g. "TH3K-298" -> 298, "TR3K-146-1" -> 146 or 1)
+/**
+ * Extracts numeric sequence from job number (e.g. "TH3K-298" -> 298, "TR3K-146-1" -> 146)
+ * Uses the last numeric group since job numbers increment overall
+ */
 const getJobSequence = (jobNumber: string): number | null => {
   const matches = jobNumber.match(/\d+/g);
   if (!matches || matches.length === 0) return null;
-  // Use the last numeric group – job numbers increment overall
   const last = matches[matches.length - 1];
   const n = Number(last);
   return Number.isFinite(n) ? n : null;
 };
+
+/**
+ * Checks if a month is within tracking window (3 months before earliest active month)
+ * Prevents very old months from being counted as newly shipped
+ */
+function isMonthWithinTrackingWindow(monthKey: string, currentUploadDate: Date, currentMonths: { key: string; label: string }[]): boolean {
+  if (currentMonths.length === 0) return false;
+  
+  const currentMonthKeys = currentMonths.map(m => m.key).sort();
+  const earliestCurrentMonth = currentMonthKeys[0];
+  
+  const [year, month] = monthKey.split("-").map(Number);
+  const [earliestYear, earliestMonth] = earliestCurrentMonth.split("-").map(Number);
+  
+  const monthDate = new Date(year, month - 1, 1);
+  const earliestDate = new Date(earliestYear, earliestMonth - 1, 1);
+  
+  const cutoffDate = new Date(earliestDate);
+  cutoffDate.setMonth(cutoffDate.getMonth() - 3);
+  
+  return monthDate >= cutoffDate;
+}
 
 /**
  * Compare two Sales Order uploads and track changes
@@ -50,22 +74,24 @@ function compareSalesOrders(
   const changes: ChangeRecord[] = [];
 
   if (!previous) {
-    // First upload is treated as a baseline only – no "new_order" changes yet
-    // because there are historical jobs before this that we don't have data for.
     return [];
   }
 
+  const currentUploadDate = parseDateLabel(current.uploadDateLabel) || new Date();
+
   // Build maps of previous and current jobs by platform/month
-  // IMPORTANT: Include ALL jobs from jobStatus (both open and shipped), not just jobNumbers
-  // This ensures we can track shipped jobs that disappeared
+  // Include ALL jobs from jobStatus (not just jobNumbers) to track shipped jobs that disappeared
+  // Only track months within tracking window to avoid counting very old shipped jobs
   const prevJobsByPlatformMonth = new Map<string, Set<string>>();
   const prevBucketsByPlatformMonth = new Map<string, SalesOrderBucket>();
   const prevMaxJobSeqByPlatform = new Map<PlatformKey, number>();
   
   Object.entries(previous.totals).forEach(([platform, monthBuckets]) => {
     Object.entries(monthBuckets).forEach(([monthKey, bucket]) => {
+      if (!isMonthWithinTrackingWindow(monthKey, currentUploadDate, current.months)) {
+        return;
+      }
       const key = `${platform}:${monthKey}`;
-      // Include all jobs from jobStatus (open, shipped, void, other) for comparison
       const allPrevJobs = new Set<string>();
       bucket.jobNumbers.forEach(job => allPrevJobs.add(job));
       if (bucket.jobStatus) {
@@ -74,8 +100,7 @@ function compareSalesOrders(
       prevJobsByPlatformMonth.set(key, allPrevJobs);
       prevBucketsByPlatformMonth.set(key, bucket);
 
-      // Track the highest job number we've ever seen for this platform up to the previous upload
-      // Check both jobNumbers and jobStatus to catch all jobs
+      // Track highest job sequence number for this platform to identify truly new jobs
       allPrevJobs.forEach((jobNum) => {
         const seq = getJobSequence(jobNum);
         if (seq != null) {
@@ -94,7 +119,6 @@ function compareSalesOrders(
   Object.entries(current.totals).forEach(([platform, monthBuckets]) => {
     Object.entries(monthBuckets).forEach(([monthKey, bucket]) => {
       const key = `${platform}:${monthKey}`;
-      // Include all jobs from jobStatus (both open and shipped) for comparison
       const allCurrentJobs = new Set<string>();
       bucket.jobNumbers.forEach(job => allCurrentJobs.add(job));
       if (bucket.jobStatus) {
@@ -111,7 +135,6 @@ function compareSalesOrders(
     const currentJobs = currentJobsByPlatformMonth.get(key) ?? new Set<string>();
     const prevBucket = prevBucketsByPlatformMonth.get(key);
     
-    // Track disappeared jobs
     const disappearedJobs: string[] = [];
     prevJobs.forEach((jobNumber) => {
       if (!currentJobs.has(jobNumber)) {
@@ -121,20 +144,14 @@ function compareSalesOrders(
     
     if (disappearedJobs.length === 0) return;
     
-    // For each disappeared job, determine what happened
     disappearedJobs.forEach((jobNumber) => {
-      // Check if job appears in a later month (ship date slipped)
       let foundInLaterMonth = false;
       let foundInLaterMonthKey = "";
-      
-      // Check if job appears in an earlier month and is shipped
       let foundInEarlierMonth = false;
       let isShippedInEarlierMonth = false;
       
-      // Check all months in current upload for this platform
       Object.entries(current.totals[platform as PlatformKey] ?? {}).forEach(([currMonthKey, currBucket]) => {
         if (currBucket.jobNumbers.includes(jobNumber)) {
-          // Compare month keys to see if it's a later or earlier month
           const [prevYear, prevMonth] = monthKey.split("-").map(Number);
           const [currYear, currMonth] = currMonthKey.split("-").map(Number);
           const prevTime = new Date(prevYear, prevMonth - 1, 1).getTime();
@@ -144,19 +161,15 @@ function compareSalesOrders(
             foundInLaterMonth = true;
             foundInLaterMonthKey = currMonthKey;
           } else if (currTime < prevTime) {
-            // Job moved to an earlier month
             foundInEarlierMonth = true;
-            // Check if it's marked as shipped in the current upload
             isShippedInEarlierMonth = 
-              (currBucket.jobStatus && currBucket.jobStatus[jobNumber] === "shipped") ||
-              (currBucket.shipped > 0);
+              !!(currBucket.jobStatus && currBucket.jobStatus[jobNumber] === "shipped");
           }
         }
       });
       
       if (foundInLaterMonth) {
-        // Job moved to a later month (ship date slipped)
-        // Estimate quantity: use average quantity per job in the previous bucket
+        // Ship date slipped - estimate quantity from previous bucket average
         const avgQtyPerJob = prevBucket && prevBucket.jobNumbers.length > 0
           ? prevBucket.quantity / prevBucket.jobNumbers.length
           : 1;
@@ -170,18 +183,14 @@ function compareSalesOrders(
           uploadDateLabel: current.uploadDateLabel,
         });
       } else if (foundInEarlierMonth && isShippedInEarlierMonth) {
-        // Job moved to an earlier month and is marked as shipped in current upload
-        // This means it was shipped (even if previous upload didn't have shipment status)
-        // Find the current bucket where this job is marked as shipped
+        // Job moved to earlier month and marked as shipped
         const currBucketWithJob = Object.values(current.totals[platform as PlatformKey] ?? {}).find(
           (bucket) => bucket.jobNumbers.includes(jobNumber) || 
                      (bucket.jobStatus && bucket.jobStatus[jobNumber] === "shipped")
         );
         
-        // Use shipped quantity from current bucket if available, otherwise estimate from previous
         let quantity = 1;
         if (currBucketWithJob && currBucketWithJob.shipped > 0) {
-          // Count shipped jobs in current bucket
           let shippedJobCount = 0;
           if (currBucketWithJob.jobStatus) {
             shippedJobCount = Object.values(currBucketWithJob.jobStatus).filter(
@@ -204,14 +213,12 @@ function compareSalesOrders(
           uploadDateLabel: current.uploadDateLabel,
         });
       } else {
-        // Job completely disappeared - check if it was shipped in previous upload
-        // Use per-job status when available; otherwise fall back to shipped totals
+        // Job completely disappeared - check if it was shipped (only if month is within tracking window)
         const wasShipped =
-          (prevBucket?.jobStatus && prevBucket.jobStatus[jobNumber] === "shipped") ||
-          (!!prevBucket && prevBucket.shipped > 0);
-        if (wasShipped) {
-          // Calculate shipped quantity: count how many jobs were actually shipped in previous bucket
-          // Use jobStatus to count shipped jobs accurately
+          prevBucket?.jobStatus && prevBucket.jobStatus[jobNumber] === "shipped";
+        const isMonthRelevant = isMonthWithinTrackingWindow(monthKey, currentUploadDate, current.months);
+        
+        if (wasShipped && isMonthRelevant) {
           let shippedJobCount = 0;
           if (prevBucket?.jobStatus) {
             shippedJobCount = Object.values(prevBucket.jobStatus).filter(
@@ -219,7 +226,6 @@ function compareSalesOrders(
             ).length;
           }
           
-          // If we have shipped job count, use it; otherwise fall back to total shipped quantity
           const avgShippedPerJob = shippedJobCount > 0
             ? prevBucket.shipped / shippedJobCount
             : prevBucket.shipped > 0
@@ -235,7 +241,7 @@ function compareSalesOrders(
             uploadDateLabel: current.uploadDateLabel,
           });
         } else {
-          // No shipped status, but job disappeared - mark as moved (conservative)
+          // No shipped status - mark as moved (conservative assumption)
           const avgQtyPerJob = prevBucket && prevBucket.jobNumbers.length > 0
             ? prevBucket.quantity / prevBucket.jobNumbers.length
             : 1;
@@ -305,7 +311,7 @@ function compareSalesOrders(
     });
   });
 
-  // Find jobs that newly appeared (new orders or moved from forecast)
+  // Find newly appeared jobs (new orders or moved from forecast)
   currentJobsByPlatformMonth.forEach((currentJobs, key) => {
     const [platform, monthKey] = key.split(":");
     const prevJobs = prevJobsByPlatformMonth.get(key) ?? new Set<string>();
@@ -322,9 +328,7 @@ function compareSalesOrders(
     
     if (newJobs.length === 0) return;
     
-    // Check which new jobs are truly new vs moved from other months
     newJobs.forEach((jobNumber) => {
-      // Check if this job appears in any previous month (moved from earlier month)
       let foundInPreviousUpload = false;
       
       Object.entries(previous.totals[platform as PlatformKey] ?? {}).forEach(([, prevBucket]) => {
@@ -337,15 +341,13 @@ function compareSalesOrders(
       const isSequentialNew = seq != null && seq > prevMaxSeq;
 
       if (!foundInPreviousUpload && isSequentialNew) {
-        // Job ID not present in previous upload AND sequence is above any previous job:
-        // treat as a true new order unless it arrives already shipped.
+        // Truly new job (not in previous upload and sequence > max seen)
         const avgQtyPerJob = currentBucket && currentBucket.jobNumbers.length > 0
           ? currentBucket.quantity / currentBucket.jobNumbers.length
           : 1;
 
         const currentStatus = currentBucket?.jobStatus?.[jobNumber];
         if (currentStatus === "shipped") {
-          // Calculate shipped quantity from current bucket
           let shippedQty = avgQtyPerJob;
           if (currentBucket) {
             let shippedJobCount = 0;
@@ -371,7 +373,7 @@ function compareSalesOrders(
             uploadDateLabel: current.uploadDateLabel,
           });
         } else if (currentStatus === "void") {
-          // ignore void arrivals
+          // Ignore void arrivals
         } else {
           changes.push({
             type: "new_order",
@@ -383,7 +385,6 @@ function compareSalesOrders(
           });
         }
       }
-      // If found in previous upload but different month, it's already handled in the "disappeared" logic above
     });
   });
 
@@ -391,8 +392,8 @@ function compareSalesOrders(
 }
 
 /**
- * Compare two Forecast uploads and track changes
- * Forecast to SO conversion: Check if jobs from previous forecast appear in current Sales Orders
+ * Compares two forecast uploads and tracks changes
+ * Detects forecast-to-SO conversions and new forecast load-ins
  */
 function compareForecasts(
   previous: ForecastSummary | null,
@@ -402,11 +403,9 @@ function compareForecasts(
   const changes: ChangeRecord[] = [];
 
   if (!previous) {
-    // First upload is a baseline only – don't mark anything as load-in yet.
     return [];
   }
 
-  // Build a set of all job numbers in current Sales Orders for quick lookup
   const currentSoJobs = new Set<string>();
   if (currentSo) {
     Object.entries(currentSo.totals).forEach(([, monthBuckets]) => {
@@ -416,7 +415,7 @@ function compareForecasts(
     });
   }
 
-  // Check for forecast conversions: jobs from previous forecast that appear in current SO
+  // Check for forecast-to-SO conversions
   Object.entries(previous.totals).forEach(([platform, monthBuckets]) => {
     Object.entries(monthBuckets).forEach(([monthKey, prevQty]) => {
       if (prevQty === 0) return;
@@ -424,7 +423,6 @@ function compareForecasts(
       const prevMachineIds = previous.machineIds?.[platform as PlatformKey]?.[monthKey] ?? [];
       if (prevMachineIds.length === 0) return;
 
-      // Find which jobs from previous forecast appear in current Sales Orders
       const convertedJobs: string[] = [];
       prevMachineIds.forEach((jobId) => {
         if (currentSoJobs.has(jobId)) {
@@ -433,12 +431,11 @@ function compareForecasts(
       });
 
       if (convertedJobs.length > 0) {
-        // These jobs converted from forecast to SO
         changes.push({
           type: "forecast_to_so_conversion",
           platform: platform as PlatformKey,
           monthKey,
-          quantity: convertedJobs.length, // Quantity matches number of jobs
+          quantity: convertedJobs.length,
           jobNumbers: convertedJobs,
           uploadDateLabel: current.uploadDateLabel,
         });
@@ -446,17 +443,14 @@ function compareForecasts(
     });
   });
 
-  // Compare quantities per platform/month for new forecast load-ins
+  // Detect new forecast load-ins (quantity increases)
   Object.entries(current.totals).forEach(([platform, monthBuckets]) => {
     Object.entries(monthBuckets).forEach(([monthKey, currentQty]) => {
       const prevQty = previous.totals[platform as PlatformKey]?.[monthKey] ?? 0;
       const delta = currentQty - prevQty;
 
       if (delta > 0) {
-        // Forecast increased - new load-in
-        // Get machine IDs (job numbers) for this platform/month from current forecast
         const machineIds = current.machineIds?.[platform as PlatformKey]?.[monthKey] ?? [];
-        // Only include jobs that weren't in previous forecast
         const prevMachineIds = previous.machineIds?.[platform as PlatformKey]?.[monthKey] ?? [];
         const prevMachineIdsSet = new Set(prevMachineIds);
         const newMachineIds = machineIds.filter((id) => !prevMachineIdsSet.has(id));
@@ -477,15 +471,13 @@ function compareForecasts(
 }
 
 /**
- * Calculate changes for a single upload compared to the previous one
- * (Internal use only - called by calculateAllUploadChanges)
+ * Calculates changes for a single upload compared to the previous one
  */
 function calculateUploadChanges(
   salesOrdersList: SalesOrderSummary[],
   forecastSummaryList: ForecastSummary[],
   uploadDateLabel: string,
 ): UploadChanges | null {
-  // Find current and previous uploads
   const sortedSales = [...salesOrdersList].sort((a, b) => {
     const dateA = parseDateLabel(a.uploadDateLabel)?.getTime() ?? 0;
     const dateB = parseDateLabel(b.uploadDateLabel)?.getTime() ?? 0;
@@ -511,17 +503,13 @@ function calculateUploadChanges(
   const currentForecast = currentForecastIndex >= 0 ? sortedForecasts[currentForecastIndex] : null;
   const previousForecast = currentForecastIndex > 0 ? sortedForecasts[currentForecastIndex - 1] : null;
 
-  // Calculate SO changes
   const soChanges = currentSo ? compareSalesOrders(previousSo, currentSo) : [];
-
-  // Calculate Forecast changes (needs current SO to check for conversions)
   const forecastChanges = currentForecast
     ? compareForecasts(previousForecast, currentForecast, currentSo)
     : [];
 
   const allChanges = [...soChanges, ...forecastChanges];
 
-  // Calculate summary
   const summary = {
     shipped: allChanges.filter((c) => c.type === "shipped").reduce((sum, c) => sum + c.quantity, 0),
     movedToLater: allChanges.filter((c) => c.type === "moved_to_later_month").reduce((sum, c) => sum + c.quantity, 0),

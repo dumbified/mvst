@@ -40,6 +40,8 @@ export function useSettings() {
         const defaultSettings = {
           partNumberToPlatform: PART_NUMBER_TO_PLATFORM,
           bomCosts: DEFAULT_BOM_COSTS,
+          googleSheetsUrl: undefined,
+          googleSheetName: undefined,
           updatedAt: new Date().toISOString(),
         };
         setCachedSettings(defaultSettings);

@@ -1,11 +1,34 @@
 import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
+import { loadSettingsServer } from '@/app/lib/storage/settingsStorageServer';
+import { extractSpreadsheetId } from '@/app/lib/utils/googleSheetsUtils';
 
-const SPREADSHEET_ID = '1tRqPqVo9HU7WSupnib8spcm4bBYPu8GgtJ7NEZmpgJU';
-const SHEET_NAME = 'Copy of Main_Simulation';
+// Fallback values (for backward compatibility)
+const DEFAULT_SPREADSHEET_ID = '1tRqPqVo9HU7WSupnib8spcm4bBYPu8GgtJ7NEZmpgJU';
+const DEFAULT_SHEET_NAME = 'Copy of Main_Simulation';
 
 export async function GET() {
   try {
+    // Load settings from Supabase
+    const settings = await loadSettingsServer();
+    
+    // Extract spreadsheet ID from URL or use provided value
+    let spreadsheetId: string;
+    if (settings?.googleSheetsUrl) {
+      const extractedId = extractSpreadsheetId(settings.googleSheetsUrl);
+      if (!extractedId) {
+        return NextResponse.json(
+          { error: 'Invalid Google Sheets URL format. Please provide a valid URL or spreadsheet ID.' },
+          { status: 400 }
+        );
+      }
+      spreadsheetId = extractedId;
+    } else {
+      spreadsheetId = DEFAULT_SPREADSHEET_ID;
+    }
+    
+    const sheetName = settings?.googleSheetName || DEFAULT_SHEET_NAME;
+
     const auth = new google.auth.GoogleAuth({
       credentials: {
         client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -19,12 +42,12 @@ export async function GET() {
     
     // Get the sheet ID for the specific tab
     const spreadsheet = await sheets.spreadsheets.get({
-      spreadsheetId: SPREADSHEET_ID,
+      spreadsheetId,
     });
 
     let sheetId: number | undefined;
     for (const sheet of spreadsheet.data.sheets || []) {
-      if (sheet.properties?.title === SHEET_NAME) {
+      if (sheet.properties?.title === sheetName) {
         sheetId = sheet.properties.sheetId ?? undefined;
         break;
       }
@@ -32,7 +55,7 @@ export async function GET() {
 
     if (sheetId === undefined) {
       return NextResponse.json(
-        { error: `Sheet "${SHEET_NAME}" not found` },
+        { error: `Sheet "${sheetName}" not found` },
         { status: 404 }
       );
     }
@@ -41,8 +64,8 @@ export async function GET() {
     // The headers are: Job Number (E), Order Type (H), Current Bucket (I), and we need to find Machine ID column
     // Let's read the header row first to identify column indices
     const headerResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!D2:I2`,
+      spreadsheetId,
+      range: `${sheetName}!D2:I2`,
     });
 
     const headers = (headerResponse.data.values || [])[0] || [];
@@ -50,8 +73,8 @@ export async function GET() {
     // Read the data from the sheet (starting from row 3, since row 2 has headers)
     // Read columns D through I to match the header range
     const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!D3:I10000`, // Data starts from row 3, columns D-I
+      spreadsheetId,
+      range: `${sheetName}!D3:I10000`, // Data starts from row 3, columns D-I
     });
 
     const rows = response.data.values || [];
