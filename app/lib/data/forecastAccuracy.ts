@@ -151,64 +151,72 @@ function compareSalesOrders(
       let isShippedInEarlierMonth = false;
       
       Object.entries(current.totals[platform as PlatformKey] ?? {}).forEach(([currMonthKey, currBucket]) => {
-        if (currBucket.jobNumbers.includes(jobNumber)) {
+        // Check both jobNumbers and jobStatus (shipped jobs are only in jobStatus)
+        const jobFound = currBucket.jobNumbers.includes(jobNumber) || 
+                         (currBucket.jobStatus && currBucket.jobStatus[jobNumber] !== undefined);
+        
+        if (jobFound) {
           const [prevYear, prevMonth] = monthKey.split("-").map(Number);
           const [currYear, currMonth] = currMonthKey.split("-").map(Number);
           const prevTime = new Date(prevYear, prevMonth - 1, 1).getTime();
           const currTime = new Date(currYear, currMonth - 1, 1).getTime();
           
+          const isShipped = !!(currBucket.jobStatus && currBucket.jobStatus[jobNumber] === "shipped");
+          
           if (currTime > prevTime) {
-            foundInLaterMonth = true;
-            foundInLaterMonthKey = currMonthKey;
+            // Job found in later month
+            if (isShipped) {
+              // If shipped in later month, count as shipped (not delayed)
+              foundInEarlierMonth = true;
+              isShippedInEarlierMonth = true;
+            } else {
+              // If not shipped, count as delayed
+              foundInLaterMonth = true;
+              foundInLaterMonthKey = currMonthKey;
+            }
           } else if (currTime < prevTime) {
+            // Job found in earlier month
             foundInEarlierMonth = true;
-            isShippedInEarlierMonth = 
-              !!(currBucket.jobStatus && currBucket.jobStatus[jobNumber] === "shipped");
+            isShippedInEarlierMonth = isShipped;
           }
         }
       });
       
       if (foundInLaterMonth) {
-        // Ship date slipped - estimate quantity from previous bucket average
-        const avgQtyPerJob = prevBucket && prevBucket.jobNumbers.length > 0
-          ? prevBucket.quantity / prevBucket.jobNumbers.length
-          : 1;
+        // Check if the job is shipped in the later month - if so, count as shipped, not delayed
+        const laterMonthBucket = current.totals[platform as PlatformKey]?.[foundInLaterMonthKey];
+        const isShippedInLaterMonth = !!(laterMonthBucket?.jobStatus && laterMonthBucket.jobStatus[jobNumber] === "shipped");
         
-        changes.push({
-          type: "moved_to_later_month",
-          platform: platform as PlatformKey,
-          monthKey: foundInLaterMonthKey,
-          quantity: Math.round(avgQtyPerJob),
-          jobNumbers: [jobNumber],
-          uploadDateLabel: current.uploadDateLabel,
-        });
+        if (isShippedInLaterMonth) {
+          // Job moved to later month but is shipped - count as shipped
+          // 1 job = 1 quantity
+          changes.push({
+            type: "shipped",
+            platform: platform as PlatformKey,
+            monthKey,
+            quantity: 1,
+            jobNumbers: [jobNumber],
+            uploadDateLabel: current.uploadDateLabel,
+          });
+        } else {
+          // Ship date slipped - 1 job = 1 quantity
+          changes.push({
+            type: "moved_to_later_month",
+            platform: platform as PlatformKey,
+            monthKey: foundInLaterMonthKey,
+            quantity: 1,
+            jobNumbers: [jobNumber],
+            uploadDateLabel: current.uploadDateLabel,
+          });
+        }
       } else if (foundInEarlierMonth && isShippedInEarlierMonth) {
         // Job moved to earlier month and marked as shipped
-        const currBucketWithJob = Object.values(current.totals[platform as PlatformKey] ?? {}).find(
-          (bucket) => bucket.jobNumbers.includes(jobNumber) || 
-                     (bucket.jobStatus && bucket.jobStatus[jobNumber] === "shipped")
-        );
-        
-        let quantity = 1;
-        if (currBucketWithJob && currBucketWithJob.shipped > 0) {
-          let shippedJobCount = 0;
-          if (currBucketWithJob.jobStatus) {
-            shippedJobCount = Object.values(currBucketWithJob.jobStatus).filter(
-              (status) => status === "shipped"
-            ).length;
-          }
-          quantity = shippedJobCount > 0
-            ? currBucketWithJob.shipped / shippedJobCount
-            : currBucketWithJob.shipped;
-        } else if (prevBucket && prevBucket.jobNumbers.length > 0) {
-          quantity = prevBucket.quantity / prevBucket.jobNumbers.length;
-        }
-        
+        // 1 job = 1 quantity
         changes.push({
           type: "shipped",
           platform: platform as PlatformKey,
           monthKey,
-          quantity: Math.round(quantity),
+          quantity: 1,
           jobNumbers: [jobNumber],
           uploadDateLabel: current.uploadDateLabel,
         });
@@ -219,38 +227,23 @@ function compareSalesOrders(
         const isMonthRelevant = isMonthWithinTrackingWindow(monthKey, currentUploadDate, current.months);
         
         if (wasShipped && isMonthRelevant) {
-          let shippedJobCount = 0;
-          if (prevBucket?.jobStatus) {
-            shippedJobCount = Object.values(prevBucket.jobStatus).filter(
-              (status) => status === "shipped"
-            ).length;
-          }
-          
-          const avgShippedPerJob = shippedJobCount > 0
-            ? prevBucket.shipped / shippedJobCount
-            : prevBucket.shipped > 0
-              ? prevBucket.shipped
-              : 1;
-
+          // 1 job = 1 quantity
           changes.push({
             type: "shipped",
             platform: platform as PlatformKey,
             monthKey,
-            quantity: Math.round(avgShippedPerJob),
+            quantity: 1,
             jobNumbers: [jobNumber],
             uploadDateLabel: current.uploadDateLabel,
           });
         } else {
           // No shipped status - mark as moved (conservative assumption)
-          const avgQtyPerJob = prevBucket && prevBucket.jobNumbers.length > 0
-            ? prevBucket.quantity / prevBucket.jobNumbers.length
-            : 1;
-          
+          // 1 job = 1 quantity
           changes.push({
             type: "moved_to_later_month",
             platform: platform as PlatformKey,
             monthKey,
-            quantity: Math.round(avgQtyPerJob),
+            quantity: 1,
             jobNumbers: [jobNumber],
             uploadDateLabel: current.uploadDateLabel,
           });
@@ -280,31 +273,13 @@ function compareSalesOrders(
 
     if (shippedNow.length === 0) return;
 
-    // Calculate shipped quantity: use current bucket's shipped quantity divided by shipped jobs
-    // Count how many jobs are marked as shipped in current bucket
-    let shippedJobCount = 0;
-    if (currBucket.jobStatus) {
-      shippedJobCount = Object.values(currBucket.jobStatus).filter(
-        (status) => status === "shipped"
-      ).length;
-    }
-    
-    // Use current bucket's shipped quantity divided by shipped job count
-    // This gives us the actual shipped quantity per job
-    const avgShippedPerJob = shippedJobCount > 0
-      ? currBucket.shipped / shippedJobCount
-      : currBucket.shipped > 0
-        ? currBucket.shipped
-        : prevBucket.jobNumbers.length > 0
-          ? prevBucket.quantity / prevBucket.jobNumbers.length
-          : 1;
-
+    // 1 job = 1 quantity
     shippedNow.forEach((jobNumber) => {
       changes.push({
         type: "shipped",
         platform: platform as PlatformKey,
         monthKey,
-        quantity: Math.round(avgShippedPerJob),
+        quantity: 1,
         jobNumbers: [jobNumber],
         uploadDateLabel: current.uploadDateLabel,
       });
@@ -342,33 +317,14 @@ function compareSalesOrders(
 
       if (!foundInPreviousUpload && isSequentialNew) {
         // Truly new job (not in previous upload and sequence > max seen)
-        const avgQtyPerJob = currentBucket && currentBucket.jobNumbers.length > 0
-          ? currentBucket.quantity / currentBucket.jobNumbers.length
-          : 1;
-
+        // 1 job = 1 quantity
         const currentStatus = currentBucket?.jobStatus?.[jobNumber];
         if (currentStatus === "shipped") {
-          let shippedQty = avgQtyPerJob;
-          if (currentBucket) {
-            let shippedJobCount = 0;
-            if (currentBucket.jobStatus) {
-              shippedJobCount = Object.values(currentBucket.jobStatus).filter(
-                (status) => status === "shipped"
-              ).length;
-            }
-            
-            if (shippedJobCount > 0 && currentBucket.shipped > 0) {
-              shippedQty = currentBucket.shipped / shippedJobCount;
-            } else if (currentBucket.shipped > 0) {
-              shippedQty = currentBucket.shipped;
-            }
-          }
-          
           changes.push({
             type: "shipped",
             platform: platform as PlatformKey,
             monthKey,
-            quantity: Math.round(shippedQty),
+            quantity: 1,
             jobNumbers: [jobNumber],
             uploadDateLabel: current.uploadDateLabel,
           });
@@ -379,7 +335,7 @@ function compareSalesOrders(
             type: "new_order",
             platform: platform as PlatformKey,
             monthKey,
-            quantity: Math.round(avgQtyPerJob),
+            quantity: 1,
             jobNumbers: [jobNumber],
             uploadDateLabel: current.uploadDateLabel,
           });

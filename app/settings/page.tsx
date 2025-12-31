@@ -251,12 +251,16 @@ export default function SettingsPage() {
       const success = await saveSettings(settings);
       
       if (success) {
-        // Update the cache so other parts of the app can use the new settings immediately
+        // Update the cache immediately so other parts of the app can use the new settings
         setCachedSettings(settings);
-        // Refresh settings to ensure we have the latest from Supabase
-        await refreshSettings();
-        // Update mappings to remove empty ones
+        // Update local state immediately to reflect what was just saved
+        setGoogleSheetsUrl(settings.googleSheetsUrl || '');
+        setGoogleSheetName(settings.googleSheetName || '');
         setPartNumberMappings(validMappings);
+        // Refresh settings from Supabase in the background to ensure consistency
+        refreshSettings().catch(() => {
+          // Ignore refresh errors - we've already updated local state and cache
+        });
         toast.success("Settings saved successfully");
       } else {
         toast.error("Failed to save settings. Please try again.");
@@ -393,7 +397,7 @@ export default function SettingsPage() {
                     className="text-xs h-8 px-2 py-1"
                   />
                   <p className="text-[11px] text-neutral-500">
-                    Paste the full Google Sheets URL or just the spreadsheet ID
+                    Paste the Google Sheets URL or just the spreadsheet ID
                   </p>
                 </div>
                 

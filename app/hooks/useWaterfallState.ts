@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { SalesOrderSummary } from "../lib/data/salesOrders";
 import { ForecastSummary } from "../lib/data/forecasts";
-import { loadSharedWaterfallState, saveSharedWaterfallState } from "../lib/storage/stateStorage";
+import { loadSharedWaterfallState, saveSharedWaterfallState, type CellComments } from "../lib/storage/stateStorage";
 import { sortPeriodsByUploadDate } from "../lib/utils/dateUtils";
 import { DEFAULT_BOM_COSTS } from "../lib/core/constants";
 import { getLocalStorageTimestamp, setLocalStorageTimestamp } from "../lib/storage/localStorageUtils";
@@ -14,6 +14,7 @@ export function useWaterfallState() {
   const [salesOrdersList, setSalesOrdersList] = useState<SalesOrderSummary[]>([]);
   const [forecastSummaryList, setForecastSummaryList] = useState<ForecastSummary[]>([]);
   const [bomCosts, setBomCosts] = useState<Record<string, number>>(DEFAULT_BOM_COSTS);
+  const [cellComments, setCellComments] = useState<CellComments>({});
 
   // Load saved data on mount (merge remote and local, prefer most complete)
   useEffect(() => {
@@ -23,11 +24,13 @@ export function useWaterfallState() {
       let localSales: SalesOrderSummary[] = [];
       let localForecasts: ForecastSummary[] = [];
       let localBomCosts: Record<string, number> | null = null;
+      let localCellComments: CellComments = {};
       
       try {
         const soJson = localStorage.getItem("mvst_salesOrdersList");
         const fcJson = localStorage.getItem("mvst_forecastSummary");
         const bomJson = localStorage.getItem("mvst_bom_costs");
+        const commentsJson = localStorage.getItem("mvst_cellComments");
         if (soJson) {
           const parsed = JSON.parse(soJson);
           if (Array.isArray(parsed)) {
@@ -46,6 +49,12 @@ export function useWaterfallState() {
           const parsed = JSON.parse(bomJson);
           if (parsed && typeof parsed === "object") {
             localBomCosts = parsed;
+          }
+        }
+        if (commentsJson) {
+          const parsed = JSON.parse(commentsJson);
+          if (parsed && typeof parsed === "object") {
+            localCellComments = parsed;
           }
         }
       } catch {
@@ -95,6 +104,20 @@ export function useWaterfallState() {
         // If local is newer, keep mergedBomCosts as-is (remote may be stale)
       }
 
+      // Merge cell comments (prefer newer timestamp, but merge both)
+      let mergedCellComments: CellComments = { ...localCellComments };
+      if (remote?.cellComments) {
+        const localUpdatedAt = getLocalStorageTimestamp();
+        const preferRemote = remote.updatedAt && (!localUpdatedAt || remote.updatedAt > localUpdatedAt);
+        if (preferRemote) {
+          // Prefer remote, but keep local comments that don't exist in remote
+          mergedCellComments = { ...localCellComments, ...remote.cellComments };
+        } else {
+          // Prefer local, but add remote comments that don't exist locally
+          mergedCellComments = { ...remote.cellComments, ...localCellComments };
+        }
+      }
+
       // Sort by upload date
       const sortedSales = sortPeriodsByUploadDate(mergedSales);
       const sortedForecasts = sortPeriodsByUploadDate(mergedForecasts);
@@ -104,13 +127,15 @@ export function useWaterfallState() {
       setSalesOrdersList(sortedSales);
       setForecastSummaryList(sortedForecasts);
       setBomCosts(mergedBomCosts);
+      setCellComments(mergedCellComments);
 
       // If we merged data and it's different from what we loaded, save it back
-      if (remote && (mergedSales.length !== localSales.length || mergedForecasts.length !== localForecasts.length || JSON.stringify(mergedBomCosts) !== JSON.stringify(localBomCosts || DEFAULT_BOM_COSTS))) {
+      if (remote && (mergedSales.length !== localSales.length || mergedForecasts.length !== localForecasts.length || JSON.stringify(mergedBomCosts) !== JSON.stringify(localBomCosts || DEFAULT_BOM_COSTS) || JSON.stringify(mergedCellComments) !== JSON.stringify(localCellComments))) {
         saveSharedWaterfallState({
           salesOrdersList: sortedSales,
           forecastSummaryList: sortedForecasts,
           bomCosts: mergedBomCosts,
+          cellComments: mergedCellComments,
           updatedAt: new Date().toISOString(),
         });
       }
@@ -138,18 +163,27 @@ export function useWaterfallState() {
     }
   }, [forecastSummaryList]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem("mvst_cellComments", JSON.stringify(cellComments));
+    } catch {
+      // ignore
+    }
+  }, [cellComments]);
+
   const persistSharedState = useCallback(
-    async (nextSales: SalesOrderSummary[], nextForecasts: ForecastSummary[], nextBomCosts?: Record<string, number>) => {
+    async (nextSales: SalesOrderSummary[], nextForecasts: ForecastSummary[], nextBomCosts?: Record<string, number>, nextCellComments?: CellComments) => {
       const updatedAt = new Date().toISOString();
       setLocalStorageTimestamp(updatedAt);
       await saveSharedWaterfallState({
         salesOrdersList: nextSales,
         forecastSummaryList: nextForecasts,
         bomCosts: nextBomCosts || bomCosts,
+        cellComments: nextCellComments || cellComments,
         updatedAt,
       });
     },
-    [bomCosts],
+    [bomCosts, cellComments],
   );
 
   return {
@@ -159,6 +193,8 @@ export function useWaterfallState() {
     setForecastSummaryList,
     bomCosts,
     setBomCosts,
+    cellComments,
+    setCellComments,
     persistSharedState,
   };
 }

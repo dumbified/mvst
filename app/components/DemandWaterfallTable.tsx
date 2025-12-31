@@ -28,8 +28,10 @@ import {
   createRowMetadataGetter,
   getRowsPerPeriod,
   getPlatformsPerPeriod,
+  generateCellCommentKey,
 } from "../lib/core/waterfallTable";
 import { fetchMachineIdData, buildMachineIdMap, PlatformMonthMachineIdMap } from "../lib/data/machineIds";
+import { type CellComments } from "../lib/storage/stateStorage";
 
 registerAllModules();
 
@@ -41,6 +43,8 @@ type DemandWaterfallTableProps = {
   salesOrdersList?: SalesOrderSummary[];
   forecastSummaryList?: ForecastSummary[];
   bomCosts?: Record<string, number>;
+  cellComments?: CellComments;
+  onCellCommentChange?: (key: string, value: string) => Promise<void>;
   editMode?: boolean;
   onDateEdit?: (dateLabel: string, anchor?: DateAnchor) => void;
   onDateDelete?: (dateLabel: string) => void;
@@ -50,6 +54,8 @@ export default function DemandWaterfallTable({
   salesOrdersList = [],
   forecastSummaryList = [],
   bomCosts: propBomCosts,
+  cellComments = {},
+  onCellCommentChange,
   editMode = false,
   onDateEdit,
   onDateDelete,
@@ -186,9 +192,62 @@ export default function DemandWaterfallTable({
         visiblePlatforms,
         months,
         showTotals,
+        customComments: cellComments,
       }),
-    [months, salesOrdersList, forecastSummaryList, showTotals, visiblePlatforms],
+    [months, salesOrdersList, forecastSummaryList, showTotals, visiblePlatforms, cellComments],
   );
+
+  // Create reverse mapping from row/col to cell comment key for saving edited comments
+  const rowColToCommentKey = useMemo(() => {
+    const map = new Map<string, string>();
+    const platformsPerPeriod = getPlatformsPerPeriod(salesOrdersList, forecastSummaryList, visiblePlatforms);
+    const rowsPerPeriodArray = platformsPerPeriod.map(count => getRowsPerPeriod(showTotals, count));
+    
+    const cumulativeRows: number[] = [];
+    let total = 0;
+    rowsPerPeriodArray.forEach((count) => {
+      cumulativeRows.push(total);
+      total += count;
+    });
+
+    const forecastMap = new Map<string, ForecastSummary>();
+    forecastSummaryList.forEach((fc) => {
+      forecastMap.set(fc.uploadDateLabel, fc);
+    });
+
+    salesOrdersList.forEach((salesOrders, periodIndex) => {
+      const periodMonthKeys = new Set(salesOrders.months.map((m) => m.key));
+      const periodForecast = forecastMap.get(salesOrders.uploadDateLabel);
+
+      const periodPlatforms = new Set<string>();
+      Object.keys(salesOrders.totals).forEach(p => periodPlatforms.add(p));
+      if (periodForecast) {
+        Object.keys(periodForecast.totals).forEach(p => periodPlatforms.add(p));
+      }
+      const periodVisiblePlatforms = visiblePlatforms.filter(p => periodPlatforms.has(p));
+
+      periodVisiblePlatforms.forEach((platform, platformIndex) => {
+        const rowIndex = cumulativeRows[periodIndex] + platformIndex;
+
+        months.forEach((month, monthIndex) => {
+          if (!periodMonthKeys.has(month.key)) return;
+
+          const colIndex = 2 + monthIndex * 3;
+          
+          // SO column
+          const soKey = generateCellCommentKey(salesOrders.uploadDateLabel, platform, month.key, "so");
+          map.set(`${rowIndex},${colIndex}`, soKey);
+          
+          // Forecast column
+          const forecastColIndex = colIndex + 1;
+          const forecastKey = generateCellCommentKey(salesOrders.uploadDateLabel, platform, month.key, "forecast");
+          map.set(`${rowIndex},${forecastColIndex}`, forecastKey);
+        });
+      });
+    });
+
+    return map;
+  }, [salesOrdersList, forecastSummaryList, visiblePlatforms, months, showTotals]);
 
   // Convert comments array to a Map for quick lookup
   const cellCommentsMap = useMemo(() => {
@@ -346,18 +405,78 @@ export default function DemandWaterfallTable({
       const handleAfterBeginEditing = () => {
         setTimeout(() => reapplyBorders(), 0);
       };
+
+      // Handle comment editing - extract custom comment and save it
+      const handleAfterSetCellMeta = (row: number, col: number, key: string, value: any) => {
+        if (key === 'comment' && onCellCommentChange) {
+          const commentKey = rowColToCommentKey.get(`${row},${col}`);
+          if (commentKey) {
+            const commentValue = value?.value || "";
+            
+            // Parse comment key to get original job numbers
+            const [uploadDateLabel, platform, monthKey, columnType] = commentKey.split(":");
+            let originalJobNumbers: string[] = [];
+            
+            if (columnType === "so") {
+              // Get job numbers from sales orders
+              const salesOrder = salesOrdersList.find(so => so.uploadDateLabel === uploadDateLabel);
+              if (salesOrder) {
+                const bucket = salesOrder.totals[platform]?.[monthKey];
+                if (bucket) {
+                  originalJobNumbers = bucket.jobNumbers || [];
+                }
+              }
+            } else if (columnType === "forecast") {
+              // Get machine IDs from forecast
+              const forecast = forecastSummaryList.find(fc => fc.uploadDateLabel === uploadDateLabel);
+              if (forecast) {
+                originalJobNumbers = forecast.machineIds?.[platform]?.[monthKey] || [];
+              }
+            }
+            
+            // Extract custom comment by removing original job numbers
+            let customComment = "";
+            if (commentValue.trim()) {
+              const originalJobNumbersText = originalJobNumbers.join("\n");
+              const lines = commentValue.split("\n").map(l => l.trim()).filter(l => l);
+              
+              // Check if comment contains "[Note: " marker
+              const noteMatch = commentValue.match(/\[Note:\s*(.+?)\]\s*$/);
+              if (noteMatch) {
+                // Extract custom comment from note marker
+                customComment = noteMatch[1].trim();
+              } else if (originalJobNumbersText) {
+                // Remove original job numbers and get remaining text
+                const originalLines = originalJobNumbersText.split("\n").map(l => l.trim()).filter(l => l);
+                const customLines = lines.filter(line => !originalLines.includes(line));
+                if (customLines.length > 0) {
+                  customComment = customLines.join("\n").trim();
+                }
+              } else {
+                // No original job numbers, entire comment is custom
+                customComment = commentValue.trim();
+              }
+            }
+            
+            // Save custom comment (empty string removes it)
+            onCellCommentChange(commentKey, customComment);
+          }
+        }
+      };
       
       hot.addHook('afterChange', handleAfterChange);
       hot.addHook('afterSelectionEnd', handleAfterSelectionEnd);
       hot.addHook('afterBeginEditing', handleAfterBeginEditing);
+      hot.addHook('afterSetCellMeta', handleAfterSetCellMeta);
       
       return () => {
         hot.removeHook('afterChange', handleAfterChange);
         hot.removeHook('afterSelectionEnd', handleAfterSelectionEnd);
         hot.removeHook('afterBeginEditing', handleAfterBeginEditing);
+        hot.removeHook('afterSetCellMeta', handleAfterSetCellMeta);
       };
     }
-  }, [data, months, selectedPlatforms, getRowMetadata, editMode, reapplyBorders]);
+  }, [data, months, selectedPlatforms, getRowMetadata, editMode, reapplyBorders, rowColToCommentKey, onCellCommentChange, salesOrdersList, forecastSummaryList]);
 
   return (
     <div className="space-y-3">

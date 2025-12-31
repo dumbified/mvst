@@ -376,7 +376,22 @@ type CellCommentsArgs = {
   visiblePlatforms: string[]; // Changed from PlatformKey[] to string[] to support dynamic platforms
   months: MonthColumn[];
   showTotals: boolean;
+  customComments?: Record<string, string>; // Custom user comments keyed by "uploadDateLabel:platform:monthKey:columnType"
 };
+
+/**
+ * Generate a cell comment key for storing custom comments
+ * Format: "uploadDateLabel:platform:monthKey:columnType"
+ * columnType: "so" | "forecast" | "ss"
+ */
+export function generateCellCommentKey(
+  uploadDateLabel: string,
+  platform: string,
+  monthKey: string,
+  columnType: "so" | "forecast" | "ss"
+): string {
+  return `${uploadDateLabel}:${platform}:${monthKey}:${columnType}`;
+}
 
 export function buildCellComments({
   salesOrdersList,
@@ -384,6 +399,7 @@ export function buildCellComments({
   visiblePlatforms,
   months,
   showTotals,
+  customComments = {},
 }: CellCommentsArgs) {
   if (salesOrdersList.length === 0) return [];
   const comments: { row: number; col: number; comment: { value: string } }[] = [];
@@ -429,33 +445,69 @@ export function buildCellComments({
         const bucket = totals[month.key];
         const colIndex = 2 + monthIndex * 3;
 
-        // Add SO comments (job numbers)
-        if (bucket && bucket.jobNumbers.length > 0) {
+        // Add SO comments (job numbers + custom comments)
+        const soCommentKey = generateCellCommentKey(salesOrders.uploadDateLabel, platform, month.key, "so");
+        const customSoComment = customComments[soCommentKey];
+        const jobNumbersText = bucket && bucket.jobNumbers.length > 0 ? bucket.jobNumbers.join("\n") : "";
+        
+        if (jobNumbersText || customSoComment) {
+          const commentParts: string[] = [];
+          if (jobNumbersText) {
+            commentParts.push(jobNumbersText);
+          }
+          if (customSoComment) {
+            if (commentParts.length > 0) {
+              commentParts.push(""); // Empty line separator
+            }
+            commentParts.push(`[Note: ${customSoComment}]`);
+          }
+          
           comments.push({
             row: rowIndex,
             col: colIndex,
             comment: {
-              value: bucket.jobNumbers.join("\n"),
+              value: commentParts.join("\n"),
             },
           });
         }
 
-        // Add Forecast comments (machine IDs = job numbers)
-        // ONLY use stored machine IDs from forecast data - don't use current map for historical data
+        // Add Forecast comments (machine IDs = job numbers + custom comments)
         const forecastValue = platformForecast[month.key];
+        const forecastColIndex = colIndex + 1; // Forecast column is next to SO column
+        const forecastCommentKey = generateCellCommentKey(salesOrders.uploadDateLabel, platform, month.key, "forecast");
+        const customForecastComment = customComments[forecastCommentKey];
+        
         if (forecastValue && Number(forecastValue) > 0 && periodForecast?.machineIds?.[platform]?.[month.key]) {
           const machineIds = periodForecast.machineIds[platform][month.key];
-          if (machineIds.length > 0) {
-            const forecastColIndex = colIndex + 1; // Forecast column is next to SO column
-            const machineIdList = machineIds.join("\n");
+          if (machineIds.length > 0 || customForecastComment) {
+            const commentParts: string[] = [];
+            if (machineIds.length > 0) {
+              commentParts.push(machineIds.join("\n"));
+            }
+            if (customForecastComment) {
+              if (commentParts.length > 0) {
+                commentParts.push(""); // Empty line separator
+              }
+              commentParts.push(`[Note: ${customForecastComment}]`);
+            }
+            
             comments.push({
               row: rowIndex,
               col: forecastColIndex,
               comment: {
-                value: machineIdList,
+                value: commentParts.join("\n"),
               },
             });
           }
+        } else if (customForecastComment) {
+          // Only custom comment, no machine IDs
+          comments.push({
+            row: rowIndex,
+            col: forecastColIndex,
+            comment: {
+              value: `[Note: ${customForecastComment}]`,
+            },
+          });
         }
       });
     });

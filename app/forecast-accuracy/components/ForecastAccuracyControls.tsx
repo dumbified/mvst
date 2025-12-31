@@ -127,7 +127,7 @@ export default function ForecastAccuracyControls({
             <Button
               type="button"
               variant="outline"
-              className="text-xs min-w-[140px] h-8 justify-start"
+              className="text-xs min-w-[140px] h-9 justify-start"
             >
               Toggle Series ▾
             </Button>

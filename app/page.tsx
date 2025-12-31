@@ -34,6 +34,8 @@ export default function Home() {
     setForecastSummaryList,
     bomCosts,
     setBomCosts,
+    cellComments,
+    setCellComments,
     persistSharedState,
   } = useWaterfallState();
 
@@ -289,6 +291,19 @@ export default function Home() {
             salesOrdersList={filteredSalesOrdersList}
             forecastSummaryList={filteredForecastSummaryList}
             bomCosts={bomCosts}
+            cellComments={cellComments}
+            onCellCommentChange={async (key, value) => {
+              const updatedComments = { ...cellComments };
+              if (value && value.trim()) {
+                // Set the comment if it has content
+                updatedComments[key] = value;
+              } else {
+                // Delete the comment if it's empty
+                delete updatedComments[key];
+              }
+              setCellComments(updatedComments);
+              await persistSharedState(salesOrdersList, forecastSummaryList, bomCosts, updatedComments);
+            }}
             editMode={editMode}
             onDateEdit={handleDateEdit}
             onDateDelete={handleDeleteByDate}

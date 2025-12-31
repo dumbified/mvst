@@ -54,9 +54,46 @@ export function useForecastAccuracyData(
 
       // Calculate accuracy from scoped values
       const totalForecastActivity = sums.forecastConversions + sums.forecastLoadIns;
-      const accuracy = totalForecastActivity > 0
-        ? (sums.forecastConversions / totalForecastActivity) * 100
-        : 0;
+      
+      // If there's no forecast activity, check if there was a previous forecast
+      // If yes, then no changes = 100% accuracy (forecast was stable/accurate)
+      // If no, then we can't measure accuracy (default to 0%)
+      let accuracy = 0;
+      if (totalForecastActivity > 0) {
+        // Calculate accuracy: (conversions / total activity) * 100
+        accuracy = (sums.forecastConversions / totalForecastActivity) * 100;
+      } else {
+        // No forecast activity - check if there was a previous forecast
+        const currentForecast = forecastSummaryList.find(
+          (fc) => fc.uploadDateLabel === change.uploadDateLabel
+        );
+        const sortedForecasts = [...forecastSummaryList].sort((a, b) => {
+          const dateA = parseDateLabel(a.uploadDateLabel)?.getTime() ?? 0;
+          const dateB = parseDateLabel(b.uploadDateLabel)?.getTime() ?? 0;
+          return dateA - dateB;
+        });
+        const currentForecastIndex = sortedForecasts.findIndex(
+          (fc) => fc.uploadDateLabel === change.uploadDateLabel
+        );
+        const previousForecast = currentForecastIndex > 0 ? sortedForecasts[currentForecastIndex - 1] : null;
+        
+        // If there was a previous forecast, no changes means 100% accuracy
+        if (previousForecast) {
+          // Check if previous forecast had any quantity for the selected platform
+          const platformsToCheck = selectedPlatform === "all" 
+            ? Object.keys(previousForecast.totals)
+            : [selectedPlatform];
+          
+          const hadPreviousForecast = platformsToCheck.some((platform) => {
+            const platformTotals = previousForecast.totals[platform] ?? {};
+            return Object.values(platformTotals).some((qty) => Number(qty) > 0);
+          });
+          
+          if (hadPreviousForecast) {
+            accuracy = 100; // No changes = forecast was accurate
+          }
+        }
+      }
 
       // Calculate current total SO for this upload period
       // Find the SalesOrderSummary for this upload date
