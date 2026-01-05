@@ -11,7 +11,9 @@ import { useForecastAccuracyData } from "./hooks/useForecastAccuracyData";
 import ForecastAccuracyControls from "./components/ForecastAccuracyControls";
 import CombinedChart from "./components/CombinedChart";
 import AccuracyChart from "./components/AccuracyChart";
-import ForecastAccuracyTable from "./components/ForecastAccuracyTable";
+import ChangeSummaryTable from "./components/ChangeSummaryTable";
+import MonthlySummaryTable from "./components/MonthlySummaryTable";
+import MonthlyFcastAccTable from "./components/MonthlyFcastAccTable";
 import LoadingState from "./components/LoadingState";
 import EmptyState from "./components/EmptyState";
 import { ChartType, VisibleSeries } from "./types";
@@ -55,7 +57,7 @@ export default function ForecastAccuracyPage() {
     [salesOrdersList, forecastSummaryList]
   );
 
-  const { uploadChanges, allUploadDates, chartData } = useForecastAccuracyData(
+  const { uploadChanges, allUploadDates, chartData, monthlyAccuracyData } = useForecastAccuracyData(
     salesOrdersList,
     forecastSummaryList,
     selectedPlatform,
@@ -97,14 +99,18 @@ export default function ForecastAccuracyPage() {
             />
 
             {chartType === "combined" && (
-              <CombinedChart data={chartData} visibleSeries={visibleSeries} />
+              <CombinedChart data={chartData} monthlyAccuracyData={monthlyAccuracyData} visibleSeries={visibleSeries} />
             )}
 
             {chartType === "accuracy" && (
-              <AccuracyChart data={chartData} />
+              <AccuracyChart data={monthlyAccuracyData} />
             )}
 
-            <ForecastAccuracyTable data={chartData} />
+            <ChangeSummaryTable data={chartData} />
+
+            <MonthlySummaryTable data={monthlyAccuracyData} />
+
+            <MonthlyFcastAccTable data={monthlyAccuracyData} />
           </>
         )}
       </section>

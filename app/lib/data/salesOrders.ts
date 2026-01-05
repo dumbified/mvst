@@ -204,7 +204,7 @@ export const parseSalesOrdersCsv = (
     if (rawStatus === "void") {
       skippedCount++;
       skipReasons["void_status"] = (skipReasons["void_status"] || 0) + 1;
-      continue;
+        continue;
     }
 
     const shipByDate = parseShipByDate(cells[shipByIndex] ?? "");
@@ -265,7 +265,7 @@ export const parseSalesOrdersCsv = (
         if (normalizedStatus !== "shipped") {
           if (!bucket.jobNumbers.includes(jobNumber)) {
             bucket.jobNumbers.push(jobNumber);
-          }
+      }
         } else {
           // If job is shipped, remove it from jobNumbers if it was previously added
           // (handles case where same job appears in multiple uploads with different statuses)

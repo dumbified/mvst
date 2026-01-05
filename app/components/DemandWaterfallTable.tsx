@@ -438,7 +438,7 @@ export default function DemandWaterfallTable({
             let customComment = "";
             if (commentValue.trim()) {
               const originalJobNumbersText = originalJobNumbers.join("\n");
-              const lines = commentValue.split("\n").map(l => l.trim()).filter(l => l);
+              const lines = commentValue.split("\n").map((l: string) => l.trim()).filter((l: string) => l);
               
               // Check if comment contains "[Note: " marker
               const noteMatch = commentValue.match(/\[Note:\s*(.+?)\]\s*$/);
@@ -448,7 +448,7 @@ export default function DemandWaterfallTable({
               } else if (originalJobNumbersText) {
                 // Remove original job numbers and get remaining text
                 const originalLines = originalJobNumbersText.split("\n").map(l => l.trim()).filter(l => l);
-                const customLines = lines.filter(line => !originalLines.includes(line));
+                const customLines = lines.filter((line: string) => !originalLines.includes(line));
                 if (customLines.length > 0) {
                   customComment = customLines.join("\n").trim();
                 }

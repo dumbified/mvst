@@ -8,7 +8,8 @@ export type ChangeType =
   | "shipped" 
   | "moved_to_later_month" 
   | "forecast_load_in" 
-  | "forecast_to_so_conversion";
+  | "forecast_to_so_conversion"
+  | "cancelled_forecast";
 
 export type ChangeRecord = {
   type: ChangeType;
@@ -27,6 +28,7 @@ export type UploadChanges = {
     movedToLater: number;
     forecastLoadIns: number;
     forecastConversions: number;
+    cancelledForecast: number;
   };
 };
 
@@ -149,7 +151,9 @@ function compareSalesOrders(
       let foundInLaterMonthKey = "";
       let foundInEarlierMonth = false;
       let isShippedInEarlierMonth = false;
+      let foundInLaterMonthAndShipped = false;
       
+      // Check ALL months in current upload (not just those in totals) to find where the job went
       Object.entries(current.totals[platform as PlatformKey] ?? {}).forEach(([currMonthKey, currBucket]) => {
         // Check both jobNumbers and jobStatus (shipped jobs are only in jobStatus)
         const jobFound = currBucket.jobNumbers.includes(jobNumber) || 
@@ -166,9 +170,8 @@ function compareSalesOrders(
           if (currTime > prevTime) {
             // Job found in later month
             if (isShipped) {
-              // If shipped in later month, count as shipped (not delayed)
-              foundInEarlierMonth = true;
-              isShippedInEarlierMonth = true;
+              // If shipped in later month, track separately
+              foundInLaterMonthAndShipped = true;
             } else {
               // If not shipped, count as delayed
               foundInLaterMonth = true;
@@ -182,33 +185,27 @@ function compareSalesOrders(
         }
       });
       
-      if (foundInLaterMonth) {
-        // Check if the job is shipped in the later month - if so, count as shipped, not delayed
-        const laterMonthBucket = current.totals[platform as PlatformKey]?.[foundInLaterMonthKey];
-        const isShippedInLaterMonth = !!(laterMonthBucket?.jobStatus && laterMonthBucket.jobStatus[jobNumber] === "shipped");
-        
-        if (isShippedInLaterMonth) {
-          // Job moved to later month but is shipped - count as shipped
-          // 1 job = 1 quantity
-          changes.push({
-            type: "shipped",
-            platform: platform as PlatformKey,
-            monthKey,
-            quantity: 1,
-            jobNumbers: [jobNumber],
-            uploadDateLabel: current.uploadDateLabel,
-          });
-        } else {
-          // Ship date slipped - 1 job = 1 quantity
-          changes.push({
-            type: "moved_to_later_month",
-            platform: platform as PlatformKey,
-            monthKey: foundInLaterMonthKey,
-            quantity: 1,
-            jobNumbers: [jobNumber],
-            uploadDateLabel: current.uploadDateLabel,
-          });
-        }
+      if (foundInLaterMonthAndShipped) {
+        // Job moved to later month and is shipped - count as shipped
+        // 1 job = 1 quantity
+        changes.push({
+          type: "shipped",
+          platform: platform as PlatformKey,
+          monthKey,
+          quantity: 1,
+          jobNumbers: [jobNumber],
+          uploadDateLabel: current.uploadDateLabel,
+        });
+      } else if (foundInLaterMonth) {
+        // Ship date slipped - 1 job = 1 quantity
+        changes.push({
+          type: "moved_to_later_month",
+          platform: platform as PlatformKey,
+          monthKey: foundInLaterMonthKey,
+          quantity: 1,
+          jobNumbers: [jobNumber],
+          uploadDateLabel: current.uploadDateLabel,
+        });
       } else if (foundInEarlierMonth && isShippedInEarlierMonth) {
         // Job moved to earlier month and marked as shipped
         // 1 job = 1 quantity
@@ -220,13 +217,18 @@ function compareSalesOrders(
           jobNumbers: [jobNumber],
           uploadDateLabel: current.uploadDateLabel,
         });
+      } else if (foundInEarlierMonth) {
+        // Job moved to earlier month but not shipped - don't count as cancelled
+        // This could be a data correction or status change, but not a cancellation
+        // Don't track it as a change
       } else {
-        // Job completely disappeared - check if it was shipped (only if month is within tracking window)
-        const wasShipped =
-          prevBucket?.jobStatus && prevBucket.jobStatus[jobNumber] === "shipped";
+        // Job completely disappeared - check its previous status
+        const prevStatus = prevBucket?.jobStatus?.[jobNumber];
+        const wasShipped = prevStatus === "shipped";
         const isMonthRelevant = isMonthWithinTrackingWindow(monthKey, currentUploadDate, current.months);
         
         if (wasShipped && isMonthRelevant) {
+          // Job was shipped in previous upload and disappeared - count as shipped
           // 1 job = 1 quantity
           changes.push({
             type: "shipped",
@@ -236,18 +238,9 @@ function compareSalesOrders(
             jobNumbers: [jobNumber],
             uploadDateLabel: current.uploadDateLabel,
           });
-        } else {
-          // No shipped status - mark as moved (conservative assumption)
-          // 1 job = 1 quantity
-          changes.push({
-            type: "moved_to_later_month",
-            platform: platform as PlatformKey,
-            monthKey,
-            quantity: 1,
-            jobNumbers: [jobNumber],
-            uploadDateLabel: current.uploadDateLabel,
-          });
         }
+        // Don't track sales order jobs as cancelled - only track forecast cancellations
+        // If was void/other or was shipped/open but not within tracking window, don't track it
       }
     });
   });
@@ -371,7 +364,8 @@ function compareForecasts(
     });
   }
 
-  // Check for forecast-to-SO conversions
+  // Check for forecast-to-SO conversions and collect converted machine IDs
+  const convertedMachineIds = new Set<string>();
   Object.entries(previous.totals).forEach(([platform, monthBuckets]) => {
     Object.entries(monthBuckets).forEach(([monthKey, prevQty]) => {
       if (prevQty === 0) return;
@@ -383,6 +377,7 @@ function compareForecasts(
       prevMachineIds.forEach((jobId) => {
         if (currentSoJobs.has(jobId)) {
           convertedJobs.push(jobId);
+          convertedMachineIds.add(jobId);
         }
       });
 
@@ -399,7 +394,16 @@ function compareForecasts(
     });
   });
 
+  // Collect all machine IDs from previous forecast (across ALL months) to check if they're truly new
+  const allPreviousMachineIds = new Set<string>();
+  Object.values(previous.machineIds || {}).forEach((monthMachineIds) => {
+    Object.values(monthMachineIds).forEach((machineIds) => {
+      machineIds.forEach((id) => allPreviousMachineIds.add(id));
+    });
+  });
+
   // Detect new forecast load-ins (quantity increases)
+  // Only count machine IDs that didn't exist in ANY month of the previous forecast
   Object.entries(current.totals).forEach(([platform, monthBuckets]) => {
     Object.entries(monthBuckets).forEach(([monthKey, currentQty]) => {
       const prevQty = previous.totals[platform as PlatformKey]?.[monthKey] ?? 0;
@@ -407,18 +411,74 @@ function compareForecasts(
 
       if (delta > 0) {
         const machineIds = current.machineIds?.[platform as PlatformKey]?.[monthKey] ?? [];
-        const prevMachineIds = previous.machineIds?.[platform as PlatformKey]?.[monthKey] ?? [];
-        const prevMachineIdsSet = new Set(prevMachineIds);
-        const newMachineIds = machineIds.filter((id) => !prevMachineIdsSet.has(id));
+        // Only count machine IDs that are truly new (not in any previous forecast month)
+        const newMachineIds = machineIds.filter((id) => !allPreviousMachineIds.has(id));
         
-        changes.push({
-          type: "forecast_load_in",
-          platform: platform as PlatformKey,
-          monthKey,
-          quantity: delta,
-          jobNumbers: newMachineIds.length > 0 ? newMachineIds : (machineIds.length > 0 ? machineIds : undefined),
-          uploadDateLabel: current.uploadDateLabel,
-        });
+        // Only create a change if there are actually new machine IDs
+        if (newMachineIds.length > 0) {
+          changes.push({
+            type: "forecast_load_in",
+            platform: platform as PlatformKey,
+            monthKey,
+            quantity: newMachineIds.length, // Count of new machine IDs (1 job = 1 quantity)
+            jobNumbers: newMachineIds,
+            uploadDateLabel: current.uploadDateLabel,
+          });
+        }
+      }
+    });
+  });
+
+  // Detect dropped forecasts (quantity decreases or completely removed)
+  // Exclude forecasts that were converted to SO (those are tracked separately)
+  // Also exclude forecasts that moved to a different month (those are just rescheduled, not cancelled)
+  
+  // First, collect all machine IDs that exist in current forecast (across all months)
+  const allCurrentMachineIds = new Set<string>();
+  Object.entries(current.totals).forEach(([platform, monthBuckets]) => {
+    Object.entries(monthBuckets).forEach(([monthKey]) => {
+      const machineIds = current.machineIds?.[platform as PlatformKey]?.[monthKey] ?? [];
+      machineIds.forEach((id) => allCurrentMachineIds.add(id));
+    });
+  });
+  
+  Object.entries(previous.totals).forEach(([platform, monthBuckets]) => {
+    Object.entries(monthBuckets).forEach(([monthKey, prevQty]) => {
+      if (prevQty === 0) return;
+      
+      const currentQty = current.totals[platform as PlatformKey]?.[monthKey] ?? 0;
+      const delta = currentQty - prevQty;
+
+      if (delta < 0) {
+        // Forecast quantity decreased - check if it's a drop, conversion, or moved to different month
+        const prevMachineIds = previous.machineIds?.[platform as PlatformKey]?.[monthKey] ?? [];
+        const currentMachineIds = current.machineIds?.[platform as PlatformKey]?.[monthKey] ?? [];
+        const currentMachineIdsSet = new Set(currentMachineIds);
+        
+        // Find machine IDs that disappeared from this month
+        // Exclude:
+        // 1. Machine IDs that are still in this month (shouldn't happen if delta < 0, but check anyway)
+        // 2. Machine IDs that were converted to SO
+        // 3. Machine IDs that moved to a different month (still exist in current forecast, just different month)
+        const droppedMachineIds = prevMachineIds.filter(
+          (id) => 
+            !currentMachineIdsSet.has(id) && // Not in current month
+            !convertedMachineIds.has(id) && // Not converted to SO
+            !allCurrentMachineIds.has(id) // Not in any other month (truly disappeared)
+        );
+        
+        // Only count as cancelled forecast if there are actually dropped machine IDs
+        // (not just conversions to SO or moves to different months)
+        if (droppedMachineIds.length > 0) {
+          changes.push({
+            type: "cancelled_forecast",
+            platform: platform as PlatformKey,
+            monthKey,
+            quantity: droppedMachineIds.length,
+            jobNumbers: droppedMachineIds,
+            uploadDateLabel: current.uploadDateLabel,
+          });
+        }
       }
     });
   });
@@ -471,6 +531,7 @@ function calculateUploadChanges(
     movedToLater: allChanges.filter((c) => c.type === "moved_to_later_month").reduce((sum, c) => sum + c.quantity, 0),
     forecastLoadIns: allChanges.filter((c) => c.type === "forecast_load_in").reduce((sum, c) => sum + c.quantity, 0),
     forecastConversions: allChanges.filter((c) => c.type === "forecast_to_so_conversion").reduce((sum, c) => sum + c.quantity, 0),
+    cancelledForecast: allChanges.filter((c) => c.type === "cancelled_forecast").reduce((sum, c) => sum + c.quantity, 0),
   };
 
   return {
@@ -516,7 +577,8 @@ export function calculateAllUploadChanges(
       summary.shipped > 0 ||
       summary.movedToLater > 0 ||
       summary.forecastLoadIns > 0 ||
-      summary.forecastConversions > 0
+      summary.forecastConversions > 0 ||
+      summary.cancelledForecast > 0
     );
   });
   

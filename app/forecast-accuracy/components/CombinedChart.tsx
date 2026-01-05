@@ -1,21 +1,47 @@
 "use client";
 
+import { useMemo } from "react";
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { ChartDataPoint } from "../types";
+import { ChartDataPoint, MonthlyAccuracyData } from "../types";
 import { VisibleSeries } from "../types";
+import { parseDateLabel } from "../../lib/utils/dateUtils";
+import { monthKeyFromDate } from "../../lib/data/salesOrders";
 
 interface CombinedChartProps {
   data: ChartDataPoint[];
+  monthlyAccuracyData: MonthlyAccuracyData[];
   visibleSeries: VisibleSeries;
 }
 
-export default function CombinedChart({ data, visibleSeries }: CombinedChartProps) {
+export default function CombinedChart({ data, monthlyAccuracyData, visibleSeries }: CombinedChartProps) {
+  // Create a map of upload month to forecast accuracy
+  const forecastAccuracyByUploadMonth = useMemo(() => {
+    const map = new Map<string, number>();
+    monthlyAccuracyData.forEach((monthData) => {
+      map.set(monthData.uploadMonthKey, monthData.forecastAccuracy);
+    });
+    return map;
+  }, [monthlyAccuracyData]);
+
+  // Merge forecast accuracy data into chart data by mapping each upload to its upload month
+  const chartDataWithForecastAccuracy = useMemo(() => {
+    return data.map((point) => {
+      const uploadDate = parseDateLabel(point.uploadDate);
+      if (uploadDate) {
+        const uploadMonthKey = monthKeyFromDate(uploadDate);
+        const forecastAccuracy = forecastAccuracyByUploadMonth.get(uploadMonthKey) ?? 0;
+        return { ...point, forecastAccuracy };
+      }
+      return { ...point, forecastAccuracy: 0 };
+    });
+  }, [data, forecastAccuracyByUploadMonth]);
+
   return (
     <div className="space-y-3">
       <h2 className="text-sm font-semibold text-neutral-800">Forecast Changes &amp; Sales Order Activity</h2>
       <div className="border border-neutral-200 rounded-lg p-3 bg-white">
         <ResponsiveContainer width="100%" height={420}>
-          <ComposedChart data={data}>
+          <ComposedChart data={chartDataWithForecastAccuracy}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis
               dataKey="uploadDateShort"
@@ -31,7 +57,7 @@ export default function CombinedChart({ data, visibleSeries }: CombinedChartProp
             />
             <Tooltip
               formatter={(value: number, name: string) => {
-                if (name === "accuracy") return [`${value}%`, "Forecast Accuracy"];
+                if (name === "Forecast Accuracy %") return [`${value}%`, "Forecast Accuracy"];
                 return [value, name];
               }}
               labelFormatter={(label) => `Upload: ${label}`}
@@ -55,7 +81,7 @@ export default function CombinedChart({ data, visibleSeries }: CombinedChartProp
             <Line
               yAxisId="right"
               type="monotone"
-              dataKey="accuracy"
+              dataKey="forecastAccuracy"
               stroke="#0088fe"
               strokeWidth={2}
               name="Forecast Accuracy %"

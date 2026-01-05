@@ -1,10 +1,10 @@
 "use client";
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { ChartDataPoint } from "../types";
+import { MonthlyAccuracyData } from "../types";
 
 interface AccuracyChartProps {
-  data: ChartDataPoint[];
+  data: MonthlyAccuracyData[];
 }
 
 export default function AccuracyChart({ data }: AccuracyChartProps) {
@@ -16,7 +16,7 @@ export default function AccuracyChart({ data }: AccuracyChartProps) {
           <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis
-              dataKey="uploadDateShort"
+              dataKey="uploadMonthLabel"
               angle={-45}
               textAnchor="end"
               height={70}
@@ -26,13 +26,16 @@ export default function AccuracyChart({ data }: AccuracyChartProps) {
               domain={[0, 100]}
             />
             <Tooltip
-              formatter={(value: number) => [`${value}%`, "Forecast Accuracy"]}
-              labelFormatter={(label) => `Upload: ${label}`}
+              formatter={(value: number, name: string, props?: { payload?: MonthlyAccuracyData }) => [
+                `${value}% (${props?.payload?.uniqueConvertedJobs ?? 0}/${props?.payload?.uniqueForecastJobs ?? 0} jobs)`,
+                "Forecast Accuracy"
+              ]}
+              labelFormatter={(label) => `Month: ${label}`}
             />
             <Legend />
             <Line
               type="monotone"
-              dataKey="accuracy"
+              dataKey="forecastAccuracy"
               stroke="#0088fe"
               strokeWidth={2}
               name="Forecast Accuracy %"

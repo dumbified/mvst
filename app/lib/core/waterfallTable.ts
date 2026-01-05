@@ -481,7 +481,7 @@ export function buildCellComments({
           const machineIds = periodForecast.machineIds[platform][month.key];
           if (machineIds.length > 0 || customForecastComment) {
             const commentParts: string[] = [];
-            if (machineIds.length > 0) {
+          if (machineIds.length > 0) {
               commentParts.push(machineIds.join("\n"));
             }
             if (customForecastComment) {

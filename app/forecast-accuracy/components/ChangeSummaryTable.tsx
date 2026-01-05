@@ -2,13 +2,13 @@
 
 import { ChartDataPoint } from "../types";
 
-interface ForecastAccuracyTableProps {
+interface ChangeSummaryTableProps {
   data: ChartDataPoint[];
 }
 
-export default function ForecastAccuracyTable({ data }: ForecastAccuracyTableProps) {
+export default function ChangeSummaryTable({ data }: ChangeSummaryTableProps) {
   return (
-    <div className="space-y-3">
+      <div className="space-y-3">
       <h2 className="text-sm font-semibold text-neutral-800">Change Summary by Upload</h2>
       <div className="border border-neutral-200 rounded-lg bg-white overflow-hidden">
         <div className="overflow-x-auto">
@@ -18,10 +18,10 @@ export default function ForecastAccuracyTable({ data }: ForecastAccuracyTablePro
                 <th className="border-b border-neutral-200 px-3 py-2 text-left">Upload Date</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Shipped</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Delayed</th>
-                <th className="border-b border-neutral-200 px-3 py-2 text-right">New Forecast</th>
+                <th className="border-b border-neutral-200 px-1 py-2 text-right">New Forecast</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Fcast → SO</th>
+                <th className="border-b border-neutral-200 py-2 text-right">Cancelled F&apos;cast</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Total SO</th>
-                <th className="border-b border-neutral-200 px-3 py-2 text-right">Accuracy %</th>
               </tr>
             </thead>
             <tbody>
@@ -52,11 +52,14 @@ export default function ForecastAccuracyTable({ data }: ForecastAccuracyTablePro
                   >
                     {row.forecastConversions}
                   </td>
+                  <td
+                    className="px-3 py-2 border-t border-neutral-200 text-right"
+                    title={row.cancelledForecastJobs.length ? row.cancelledForecastJobs.join(", ") : undefined}
+                  >
+                    {row.cancelledForecast}
+                  </td>
                   <td className="px-3 py-2 border-t border-neutral-200 text-right">
                     {row.currentTotalSo}
-                  </td>
-                  <td className="px-3 py-2 border-t border-neutral-200 text-right font-semibold">
-                    {row.accuracy}%
                   </td>
                 </tr>
               ))}
