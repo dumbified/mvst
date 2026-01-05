@@ -4,8 +4,8 @@ import { loadSettingsServer } from '@/app/lib/storage/settingsStorageServer';
 import { extractSpreadsheetId } from '@/app/lib/utils/googleSheetsUtils';
 
 // Fallback values (for backward compatibility)
-const DEFAULT_SPREADSHEET_ID = '1tRqPqVo9HU7WSupnib8spcm4bBYPu8GgtJ7NEZmpgJU';
-const DEFAULT_SHEET_NAME = 'Copy of Main_Simulation';
+const DEFAULT_SPREADSHEET_ID = '1q8oKeu3fI5BuMpkJXhAtlJQsfAXjLHawkfq9yrI5gck';
+const DEFAULT_SHEET_NAME = 'Main_Simulation';
 
 export async function GET() {
   try {

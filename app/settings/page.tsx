@@ -383,6 +383,17 @@ export default function SettingsPage() {
                 </p>
               </div>
               
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+                <p className="text-xs text-blue-700">
+                  Please share your Google Sheets with the following email address to enable data access:
+                </p>
+                <div className="bg-white border border-blue-200 rounded px-3 py-2">
+                  <code className="text-xs font-mono text-blue-900 break-all">
+                    nextjs-sheets-service@forecastaccuracy.iam.gserviceaccount.com
+                  </code>
+                </div>
+              </div>
+              
               <div className="space-y-3">
                 <div className="flex flex-col gap-1">
                   <Label htmlFor="googleSheetsUrl" className="text-xs font-medium text-neutral-700">
