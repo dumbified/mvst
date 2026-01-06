@@ -82,9 +82,15 @@ export default function Home() {
   useClickOutside(filterMenuRef, () => setShowFilterMenu(false), showFilterMenu);
 
   const handleDeleteByDate = useCallback(
-    async (dateLabel: string) => {
-      const nextSales = salesOrdersList.filter((so) => so.uploadDateLabel !== dateLabel);
-      const nextForecasts = forecastSummaryList.filter((fc) => fc.uploadDateLabel !== dateLabel);
+    async (idOrDateLabel: number | string) => {
+      // Support both ID (new) and dateLabel (backward compatibility)
+      const nextSales = typeof idOrDateLabel === "number"
+        ? salesOrdersList.filter((so) => so.id !== idOrDateLabel)
+        : salesOrdersList.filter((so) => so.uploadDateLabel !== idOrDateLabel);
+      
+      const nextForecasts = typeof idOrDateLabel === "number"
+        ? forecastSummaryList.filter((fc) => fc.id !== idOrDateLabel)
+        : forecastSummaryList.filter((fc) => fc.uploadDateLabel !== idOrDateLabel);
       
       // Update state immediately
       setSalesOrdersList(nextSales);

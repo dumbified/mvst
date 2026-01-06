@@ -276,7 +276,7 @@ export function getPlatformsPerPeriod(
 
 export function createNestedHeaders(months: MonthColumn[]): NestedHeaders {
   const topRow: HeaderCell[] = [
-    { label: "Fcast Load in Date", colspan: 1 },
+    { label: "Created Date", colspan: 1 },
     { label: "Platform", colspan: 1 },
     ...months.map((month) => ({ label: month.label, colspan: 3 })),
     { label: "Summary", colspan: SUMMARY_COLUMNS.length, className: "summary-header" },

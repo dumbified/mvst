@@ -8,6 +8,7 @@ import { MONTH_ABBREVIATIONS, PLATFORM_LABELS, getPartNumberToPlatform } from ".
 import { normalizeHeader, detectDelimiter, parseDelimitedLine } from '../utils/csvUtils';
 
 export type ForecastSummary = {
+  id?: number; // Unique ID for each upload, starting from 1
   uploadDateLabel: string;
   months: { key: string; label: string }[];
   totals: Record<string, Record<string, number>>; // Changed from PlatformKey to string to support dynamic platforms
@@ -101,6 +102,7 @@ const expandMonthRange = (startKey: string, endKey: string) => {
 export const parseForecastCsv = (
   csvText: string,
   uploadDate: Date,
+  id?: number
 ): ForecastSummary | null => {
   const trimmedText = csvText.trim();
   if (!trimmedText) {
@@ -218,6 +220,7 @@ export const parseForecastCsv = (
   }));
 
   return {
+    ...(id !== undefined && { id }),
     uploadDateLabel: formatFullDate(uploadDate),
     months,
     totals,

@@ -47,7 +47,7 @@ type DemandWaterfallTableProps = {
   onCellCommentChange?: (key: string, value: string) => Promise<void>;
   editMode?: boolean;
   onDateEdit?: (dateLabel: string, anchor?: DateAnchor) => void;
-  onDateDelete?: (dateLabel: string) => void;
+  onDateDelete?: (id: number | string) => void; // Accept ID (number) or dateLabel (string) for backward compatibility
 };
 
 export default function DemandWaterfallTable({
@@ -748,12 +748,24 @@ export default function DemandWaterfallTable({
             try {
               const table = getHotInstance();
               const label = table?.getDataAtCell(row, 0);
-              if (label && typeof label === "string") {
+              const metadata = getRowMetadata(row);
+              const { periodIndex } = metadata;
+              
+              if (label && typeof label === "string" && periodIndex >= 0 && periodIndex < salesOrdersList.length) {
+                const upload = salesOrdersList[periodIndex];
+                const uploadId = upload.id;
+                
                 if (event?.button === 2) {
                   // Right-click: delete
                   event.preventDefault?.();
-                  const ok = window.confirm(`Delete records for "${label}"?\nThis can't be undone.`);
-                  if (ok) onDateDelete?.(label);
+                  if (uploadId !== undefined) {
+                    const ok = window.confirm(`Delete upload #${uploadId} (${label})?\nThis can't be undone.`);
+                    if (ok) onDateDelete?.(uploadId);
+                  } else {
+                    // Fallback to dateLabel for backward compatibility
+                    const ok = window.confirm(`Delete records for "${label}"?\nThis can't be undone.`);
+                    if (ok) onDateDelete?.(label as any);
+                  }
                 } else if (event?.button === 0) {
                   // Left-click: edit
                   let anchor: DateAnchor | undefined;

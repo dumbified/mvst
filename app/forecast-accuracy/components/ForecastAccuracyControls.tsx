@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChartType, VisibleSeries, UploadDateOption } from "../types";
+import { ChartType, VisibleSeries, MonthOption } from "../types";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,18 +19,18 @@ import {
 } from "@/components/ui/popover";
 
 interface ForecastAccuracyControlsProps {
-  selectedPlatform: string | "all";
-  onPlatformChange: (platform: string | "all") => void;
+  selectedPlatform: string;
+  onPlatformChange: (platform: string) => void;
   allPlatforms: string[];
   chartType: ChartType;
   onChartTypeChange: (type: ChartType) => void;
   visibleSeries: VisibleSeries;
   onVisibleSeriesChange: (series: VisibleSeries) => void;
-  startUpload: string | "all";
-  onStartUploadChange: (upload: string | "all") => void;
-  endUpload: string | "all";
-  onEndUploadChange: (upload: string | "all") => void;
-  allUploadDates: UploadDateOption[];
+  startMonth: string | "all";
+  onStartMonthChange: (month: string | "all") => void;
+  endMonth: string | "all";
+  onEndMonthChange: (month: string | "all") => void;
+  allMonths: MonthOption[];
 }
 
 export default function ForecastAccuracyControls({
@@ -41,11 +41,11 @@ export default function ForecastAccuracyControls({
   onChartTypeChange,
   visibleSeries,
   onVisibleSeriesChange,
-  startUpload,
-  onStartUploadChange,
-  endUpload,
-  onEndUploadChange,
-  allUploadDates,
+  startMonth,
+  onStartMonthChange,
+  endMonth,
+  onEndMonthChange,
+  allMonths,
 }: ForecastAccuracyControlsProps) {
   const [showSeriesMenu, setShowSeriesMenu] = useState(false);
 
@@ -58,7 +58,6 @@ export default function ForecastAccuracyControls({
             <SelectValue placeholder="Select platform" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Platforms</SelectItem>
             {allPlatforms.map((platform) => (
               <SelectItem key={platform} value={platform}>
                 {platform}
@@ -75,8 +74,8 @@ export default function ForecastAccuracyControls({
             <SelectValue placeholder="Select chart type" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="accuracy">Accuracy</SelectItem>
             <SelectItem value="combined">Combined View</SelectItem>
-            <SelectItem value="accuracy">Accuracy Only</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -85,31 +84,31 @@ export default function ForecastAccuracyControls({
       <div className="h-full w-px bg-neutral-200 mx-1 self-stretch" />
 
       <div className="flex flex-col gap-1">
-        <Label className="text-xs font-medium text-neutral-700">Upload Range</Label>
+        <Label className="text-xs font-medium text-neutral-700">Month Range</Label>
         <div className="flex items-center gap-2">
-          <Select value={startUpload} onValueChange={onStartUploadChange}>
+          <Select value={startMonth} onValueChange={onStartMonthChange}>
             <SelectTrigger className="text-xs min-w-[140px] h-8">
-              <SelectValue placeholder="Start date" />
+              <SelectValue placeholder="Start month" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Start: All</SelectItem>
-              {allUploadDates.map((d) => (
-                <SelectItem key={`start-${d.label}`} value={d.label}>
-                  {d.label}
+              {allMonths.map((m) => (
+                <SelectItem key={`start-${m.key}`} value={m.key}>
+                  {m.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           <span className="text-neutral-500 text-xs">to</span>
-          <Select value={endUpload} onValueChange={onEndUploadChange}>
+          <Select value={endMonth} onValueChange={onEndMonthChange}>
             <SelectTrigger className="text-xs min-w-[140px] h-8">
-              <SelectValue placeholder="End date" />
+              <SelectValue placeholder="End month" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">End: All</SelectItem>
-              {allUploadDates.map((d) => (
-                <SelectItem key={`end-${d.label}`} value={d.label}>
-                  {d.label}
+              {allMonths.map((m) => (
+                <SelectItem key={`end-${m.key}`} value={m.key}>
+                  {m.label}
                 </SelectItem>
               ))}
             </SelectContent>

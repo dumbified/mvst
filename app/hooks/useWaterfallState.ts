@@ -5,6 +5,7 @@ import { loadSharedWaterfallState, saveSharedWaterfallState, type CellComments }
 import { sortPeriodsByUploadDate } from "../lib/utils/dateUtils";
 import { DEFAULT_BOM_COSTS } from "../lib/core/constants";
 import { getLocalStorageTimestamp, setLocalStorageTimestamp } from "../lib/storage/localStorageUtils";
+import { assignMissingIds } from "../lib/utils/uploadIdUtils";
 
 /**
  * Hook to manage waterfall state (sales orders, forecasts, BOM costs)
@@ -122,18 +123,29 @@ export function useWaterfallState() {
       const sortedSales = sortPeriodsByUploadDate(mergedSales);
       const sortedForecasts = sortPeriodsByUploadDate(mergedForecasts);
 
+      // Assign IDs to uploads that don't have them (migration for existing data)
+      const { salesOrdersList: salesWithIds, forecastSummaryList: forecastsWithIds } = assignMissingIds(
+        sortedSales,
+        sortedForecasts
+      );
+
       if (cancelled) return;
 
-      setSalesOrdersList(sortedSales);
-      setForecastSummaryList(sortedForecasts);
+      setSalesOrdersList(salesWithIds);
+      setForecastSummaryList(forecastsWithIds);
       setBomCosts(mergedBomCosts);
       setCellComments(mergedCellComments);
 
-      // If we merged data and it's different from what we loaded, save it back
-      if (remote && (mergedSales.length !== localSales.length || mergedForecasts.length !== localForecasts.length || JSON.stringify(mergedBomCosts) !== JSON.stringify(localBomCosts || DEFAULT_BOM_COSTS) || JSON.stringify(mergedCellComments) !== JSON.stringify(localCellComments))) {
+      // If we merged data, assigned IDs, or it's different from what we loaded, save it back
+      const idsChanged = salesWithIds.some((so, i) => so.id !== sortedSales[i]?.id) ||
+        forecastsWithIds.some((fc, i) => fc.id !== sortedForecasts[i]?.id);
+      
+      if (remote && (mergedSales.length !== localSales.length || mergedForecasts.length !== localForecasts.length || 
+          JSON.stringify(mergedBomCosts) !== JSON.stringify(localBomCosts || DEFAULT_BOM_COSTS) || 
+          JSON.stringify(mergedCellComments) !== JSON.stringify(localCellComments) || idsChanged)) {
         saveSharedWaterfallState({
-          salesOrdersList: sortedSales,
-          forecastSummaryList: sortedForecasts,
+          salesOrdersList: salesWithIds,
+          forecastSummaryList: forecastsWithIds,
           bomCosts: mergedBomCosts,
           cellComments: mergedCellComments,
           updatedAt: new Date().toISOString(),

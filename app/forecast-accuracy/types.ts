@@ -1,3 +1,10 @@
+export type ForecastVariance = {
+  positive: number;
+  negative: number;
+  positiveJobs: string[];
+  negativeJobs: string[];
+};
+
 export type ChartDataPoint = {
   uploadDate: string;
   uploadDateShort: string;
@@ -8,13 +15,14 @@ export type ChartDataPoint = {
   cancelledForecast: number;
   accuracy: number; // Forecast accuracy percentage (calculated by month)
   currentTotalSo: number; // Current total SO for active months
+  forecastVariance: ForecastVariance;
   // Job lists for tooltip/title
   shippedJobs: string[];
   movedToLaterJobs: string[];
   forecastLoadInsJobs: string[];
   forecastConversionsJobs: string[];
   cancelledForecastJobs: string[];
-  [key: string]: string | number | string[]; // For platform-specific data
+  [key: string]: string | number | string[] | ForecastVariance; // For platform-specific data
 };
 
 export type ChartType = "combined" | "accuracy";
@@ -39,18 +47,22 @@ export type MonthOption = {
 };
 
 export type MonthlyAccuracyData = {
+  forecastMonthKey: string; // e.g., "2025-11" (forecast month bucket)
+  forecastMonthLabel: string; // e.g., "Nov 25"
+  maxForecastQuantity: number; // Maximum forecast quantity across all forecast uploads for this month
+  actualShippedQuantity: number; // Actual shipped quantity for this month
+  forecastAccuracy: number; // Forecast accuracy: (actual shipped / max forecast) * 100
+  hasShippedData: boolean; // Whether there is actual shipped data for this month
+};
+
+export type MonthlySummaryData = {
   uploadMonthKey: string; // e.g., "2025-11" (month when uploads happened)
   uploadMonthLabel: string; // e.g., "Nov 25"
-  totalNewForecast: number; // Sum of all forecast_load_in across all forecast months (quantity)
-  totalFcastToSo: number; // Sum of all forecast_to_so_conversion across all forecast months (quantity)
   totalShipped: number; // Sum of all shipped across all uploads in this month
-  forecastAccuracy: number; // Job-based forecast accuracy: (unique converted jobs) / (unique forecast jobs) * 100
-  uniqueForecastJobs: number; // Count of unique forecast job numbers
-  uniqueConvertedJobs: number; // Count of unique forecast jobs that converted to SO
-  uploadCount: number; // Number of uploads in this month
-  // Job lists for tooltip
-  forecastLoadInsJobs: string[];
-  forecastConversionsJobs: string[];
-  shippedJobs: string[];
+  totalNewForecast: number; // Sum of all forecast_load_in across all uploads in this month
+  totalFcastToSo: number; // Sum of all forecast_to_so_conversion across all uploads in this month
+  shippedJobs: string[]; // Job numbers for shipped items
+  forecastLoadInsJobs: string[]; // Job numbers for new forecast items
+  forecastConversionsJobs: string[]; // Job numbers for forecast to SO conversions
 };
 

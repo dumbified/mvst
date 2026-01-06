@@ -9,20 +9,19 @@ import { getBomCosts } from "../lib/core/constants";
 import { getAllPlatforms } from "../lib/core/platformUtils";
 import { useForecastAccuracyData } from "./hooks/useForecastAccuracyData";
 import ForecastAccuracyControls from "./components/ForecastAccuracyControls";
-import CombinedChart from "./components/CombinedChart";
-import AccuracyChart from "./components/AccuracyChart";
-import ChangeSummaryTable from "./components/ChangeSummaryTable";
-import MonthlySummaryTable from "./components/MonthlySummaryTable";
-import MonthlyFcastAccTable from "./components/MonthlyFcastAccTable";
+import ForecastAccuracyTabs from "./components/ForecastAccuracyTabs";
 import LoadingState from "./components/LoadingState";
 import EmptyState from "./components/EmptyState";
 import { ChartType, VisibleSeries } from "./types";
+import { parseDateLabel } from "../lib/utils/dateUtils";
+import { formatMonthLabel, monthKeyFromDate } from "../lib/data/salesOrders";
+import { monthKeyToTimestamp } from "../lib/utils/dateUtils";
 
 export default function ForecastAccuracyPage() {
   const [salesOrdersList, setSalesOrdersList] = useState<SalesOrderSummary[]>([]);
   const [forecastSummaryList, setForecastSummaryList] = useState<ForecastSummary[]>([]);
-  const [selectedPlatform, setSelectedPlatform] = useState<string | "all">("all");
-  const [chartType, setChartType] = useState<ChartType>("combined");
+  const [selectedPlatform, setSelectedPlatform] = useState<string>("th3k");
+  const [chartType, setChartType] = useState<ChartType>("accuracy");
   const [visibleSeries, setVisibleSeries] = useState<VisibleSeries>({
     forecastLoadIns: true,
     forecastConversions: true,
@@ -30,8 +29,8 @@ export default function ForecastAccuracyPage() {
     movedToLater: true,
     currentTotalSo: true,
   });
-  const [startUpload, setStartUpload] = useState<string | "all">("all");
-  const [endUpload, setEndUpload] = useState<string | "all">("all");
+  const [startMonth, setStartMonth] = useState<string | "all">("all");
+  const [endMonth, setEndMonth] = useState<string | "all">("all");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -57,12 +56,42 @@ export default function ForecastAccuracyPage() {
     [salesOrdersList, forecastSummaryList]
   );
 
-  const { uploadChanges, allUploadDates, chartData, monthlyAccuracyData } = useForecastAccuracyData(
+  // Ensure selectedPlatform is valid - default to "th3k" if available, otherwise first platform
+  useEffect(() => {
+    if (allPlatforms.length > 0 && (!selectedPlatform || !allPlatforms.includes(selectedPlatform))) {
+      const defaultPlatform = allPlatforms.includes("th3k") ? "th3k" : allPlatforms[0];
+      setSelectedPlatform(defaultPlatform);
+    }
+  }, [allPlatforms, selectedPlatform]);
+
+  // Collect available months from uploads
+  const allMonths = useMemo(() => {
+    const monthSet = new Set<string>();
+    const collect = (list: { uploadDateLabel: string }[]) => {
+      list.forEach((item) => {
+        const parsed = parseDateLabel(item.uploadDateLabel);
+        if (!parsed) return;
+        const key = monthKeyFromDate(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+        monthSet.add(key);
+      });
+    };
+    collect(salesOrdersList);
+    collect(forecastSummaryList);
+    return Array.from(monthSet)
+      .sort()
+      .map((key) => ({
+        key,
+        label: formatMonthLabel(key),
+        time: monthKeyToTimestamp(key),
+      }));
+  }, [salesOrdersList, forecastSummaryList]);
+
+  const { uploadChanges, chartData, monthlyAccuracyData, monthlySummaryData } = useForecastAccuracyData(
     salesOrdersList,
     forecastSummaryList,
     selectedPlatform,
-    startUpload,
-    endUpload,
+    startMonth,
+    endMonth,
   );
 
   if (loading) {
@@ -91,26 +120,23 @@ export default function ForecastAccuracyPage() {
               onChartTypeChange={setChartType}
               visibleSeries={visibleSeries}
               onVisibleSeriesChange={setVisibleSeries}
-              startUpload={startUpload}
-              onStartUploadChange={setStartUpload}
-              endUpload={endUpload}
-              onEndUploadChange={setEndUpload}
-              allUploadDates={allUploadDates}
+              startMonth={startMonth}
+              onStartMonthChange={setStartMonth}
+              endMonth={endMonth}
+              onEndMonthChange={setEndMonth}
+              allMonths={allMonths}
             />
 
-            {chartType === "combined" && (
-              <CombinedChart data={chartData} monthlyAccuracyData={monthlyAccuracyData} visibleSeries={visibleSeries} />
-            )}
-
-            {chartType === "accuracy" && (
-              <AccuracyChart data={monthlyAccuracyData} />
-            )}
-
-            <ChangeSummaryTable data={chartData} />
-
-            <MonthlySummaryTable data={monthlyAccuracyData} />
-
-            <MonthlyFcastAccTable data={monthlyAccuracyData} />
+            <ForecastAccuracyTabs
+              chartType={chartType}
+              chartData={chartData}
+              monthlyAccuracyData={monthlyAccuracyData}
+              monthlySummaryData={monthlySummaryData}
+              visibleSeries={visibleSeries}
+              salesOrdersList={salesOrdersList}
+              forecastSummaryList={forecastSummaryList}
+              selectedPlatform={selectedPlatform}
+            />
           </>
         )}
       </section>

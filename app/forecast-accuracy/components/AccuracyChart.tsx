@@ -13,10 +13,10 @@ export default function AccuracyChart({ data }: AccuracyChartProps) {
       <h2 className="text-sm font-semibold text-neutral-800">Forecast Accuracy Over Time</h2>
       <div className="border border-neutral-200 rounded-lg p-3 bg-white">
         <ResponsiveContainer width="100%" height={360}>
-          <LineChart data={data}>
+          <LineChart data={data.filter(d => d.hasShippedData)}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis
-              dataKey="uploadMonthLabel"
+              dataKey="forecastMonthLabel"
               angle={-45}
               textAnchor="end"
               height={70}
@@ -27,10 +27,10 @@ export default function AccuracyChart({ data }: AccuracyChartProps) {
             />
             <Tooltip
               formatter={(value: number, name: string, props?: { payload?: MonthlyAccuracyData }) => [
-                `${value}% (${props?.payload?.uniqueConvertedJobs ?? 0}/${props?.payload?.uniqueForecastJobs ?? 0} jobs)`,
+                `${value}% (${props?.payload?.actualShippedQuantity ?? 0}/${props?.payload?.maxForecastQuantity ?? 0} qty)`,
                 "Forecast Accuracy"
               ]}
-              labelFormatter={(label) => `Month: ${label}`}
+              labelFormatter={(label) => `Forecast Month: ${label}`}
             />
             <Legend />
             <Line

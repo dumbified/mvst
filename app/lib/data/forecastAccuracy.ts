@@ -29,6 +29,7 @@ export type UploadChanges = {
     forecastLoadIns: number;
     forecastConversions: number;
     cancelledForecast: number;
+    forecastVariance: { positive: number; negative: number; positiveJobs: string[]; negativeJobs: string[] };
   };
 };
 
@@ -487,6 +488,85 @@ function compareForecasts(
 }
 
 /**
+ * Calculate month difference between two month keys
+ * Returns positive number if month2 is later than month1, negative if earlier
+ */
+function calculateMonthDifference(monthKey1: string, monthKey2: string): number {
+  const [year1, month1] = monthKey1.split("-").map(Number);
+  const [year2, month2] = monthKey2.split("-").map(Number);
+  
+  // Calculate difference in months
+  const monthsDiff = (year2 - year1) * 12 + (month2 - month1);
+  return monthsDiff;
+}
+
+/**
+ * Calculate forecast variance by comparing previous and current forecast uploads
+ * Returns { positive: number, negative: number, positiveJobs: string[], negativeJobs: string[] }
+ * - Positive: forecasts moved to earlier months
+ * - Negative: forecasts moved to later months
+ */
+function calculateForecastVariance(
+  previous: ForecastSummary | null,
+  current: ForecastSummary,
+): { positive: number; negative: number; positiveJobs: string[]; negativeJobs: string[] } {
+  if (!previous || !previous.machineIds || !current.machineIds) {
+    return { positive: 0, negative: 0, positiveJobs: [], negativeJobs: [] };
+  }
+
+  // Build a map of machine ID -> previous month key
+  const prevMachineIdToMonth = new Map<string, { platform: string; monthKey: string }>();
+  Object.entries(previous.machineIds).forEach(([platform, monthMachineIds]) => {
+    Object.entries(monthMachineIds).forEach(([monthKey, machineIds]) => {
+      machineIds.forEach((machineId) => {
+        prevMachineIdToMonth.set(machineId, { platform, monthKey });
+      });
+    });
+  });
+
+  // Build a map of machine ID -> current month key
+  const currMachineIdToMonth = new Map<string, { platform: string; monthKey: string }>();
+  Object.entries(current.machineIds).forEach(([platform, monthMachineIds]) => {
+    Object.entries(monthMachineIds).forEach(([monthKey, machineIds]) => {
+      machineIds.forEach((machineId) => {
+        currMachineIdToMonth.set(machineId, { platform, monthKey });
+      });
+    });
+  });
+
+  let positiveVariance = 0; // Moved to earlier month
+  let negativeVariance = 0; // Moved to later month
+  const positiveJobs: string[] = []; // Job numbers that moved earlier
+  const negativeJobs: string[] = []; // Job numbers that moved later
+
+  // For each machine ID that exists in both previous and current
+  prevMachineIdToMonth.forEach((prevInfo, machineId) => {
+    const currInfo = currMachineIdToMonth.get(machineId);
+    if (!currInfo) return; // Machine ID doesn't exist in current (cancelled or converted)
+
+    // Only count if it's the same platform
+    if (prevInfo.platform !== currInfo.platform) return;
+
+    // If month changed, calculate variance
+    if (prevInfo.monthKey !== currInfo.monthKey) {
+      const monthDiff = calculateMonthDifference(prevInfo.monthKey, currInfo.monthKey);
+      
+      if (monthDiff < 0) {
+        // Moved to earlier month (positive variance)
+        positiveVariance += 1; // 1 machine ID = 1 quantity
+        positiveJobs.push(machineId);
+      } else if (monthDiff > 0) {
+        // Moved to later month (negative variance)
+        negativeVariance += 1; // 1 machine ID = 1 quantity
+        negativeJobs.push(machineId);
+      }
+    }
+  });
+
+  return { positive: positiveVariance, negative: negativeVariance, positiveJobs, negativeJobs };
+}
+
+/**
  * Calculates changes for a single upload compared to the previous one
  */
 function calculateUploadChanges(
@@ -526,12 +606,18 @@ function calculateUploadChanges(
 
   const allChanges = [...soChanges, ...forecastChanges];
 
+  // Calculate forecast variance
+  const forecastVariance = currentForecast && previousForecast
+    ? calculateForecastVariance(previousForecast, currentForecast)
+    : { positive: 0, negative: 0, positiveJobs: [], negativeJobs: [] };
+
   const summary = {
     shipped: allChanges.filter((c) => c.type === "shipped").reduce((sum, c) => sum + c.quantity, 0),
     movedToLater: allChanges.filter((c) => c.type === "moved_to_later_month").reduce((sum, c) => sum + c.quantity, 0),
     forecastLoadIns: allChanges.filter((c) => c.type === "forecast_load_in").reduce((sum, c) => sum + c.quantity, 0),
     forecastConversions: allChanges.filter((c) => c.type === "forecast_to_so_conversion").reduce((sum, c) => sum + c.quantity, 0),
     cancelledForecast: allChanges.filter((c) => c.type === "cancelled_forecast").reduce((sum, c) => sum + c.quantity, 0),
+    forecastVariance,
   };
 
   return {
@@ -578,7 +664,9 @@ export function calculateAllUploadChanges(
       summary.movedToLater > 0 ||
       summary.forecastLoadIns > 0 ||
       summary.forecastConversions > 0 ||
-      summary.cancelledForecast > 0
+      summary.cancelledForecast > 0 ||
+      summary.forecastVariance.positive > 0 ||
+      summary.forecastVariance.negative > 0
     );
   });
   

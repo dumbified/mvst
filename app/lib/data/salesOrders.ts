@@ -10,6 +10,7 @@ export type SalesOrderBucket = {
 };
 
 export type SalesOrderSummary = {
+  id?: number; // Unique ID for each upload, starting from 1
   uploadDateLabel: string;
   months: { key: string; label: string }[];
   totals: Record<string, Record<string, SalesOrderBucket>>; // Changed from PlatformKey to string to support dynamic platforms
@@ -129,7 +130,8 @@ const getOrCreateBucket = (
 
 export const parseSalesOrdersCsv = (
   csvText: string,
-  uploadDate: Date
+  uploadDate: Date,
+  id?: number
 ): SalesOrderSummary | null => {
   // Drop very old data up front (keep from Jan 2025) and only keep recent horizon (6 months before upload)
   const minDate = new Date(2025, 0, 1);
@@ -301,6 +303,7 @@ export const parseSalesOrdersCsv = (
   }));
 
   return {
+    ...(id !== undefined && { id }),
     uploadDateLabel: formatFullDate(uploadDate),
     months,
     totals,

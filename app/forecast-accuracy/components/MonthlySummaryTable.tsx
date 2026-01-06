@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { MonthlyAccuracyData } from "../types";
+import { MonthlySummaryData } from "../types";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 
 interface MonthlySummaryTableProps {
-  data: MonthlyAccuracyData[];
+  data: MonthlySummaryData[];
 }
 
 export default function MonthlySummaryTable({ data }: MonthlySummaryTableProps) {
@@ -42,7 +42,7 @@ export default function MonthlySummaryTable({ data }: MonthlySummaryTableProps) 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-neutral-800">Summary by Upload Month</h2>
+        <h2 className="text-sm font-semibold text-neutral-800">Summary by Month</h2>
         <div className="flex items-center gap-2">
           <Label className="text-xs font-medium text-neutral-700">Filter by Year:</Label>
           <Select value={selectedYear} onValueChange={setSelectedYear}>
@@ -67,7 +67,7 @@ export default function MonthlySummaryTable({ data }: MonthlySummaryTableProps) 
               <tr className="bg-neutral-50 text-neutral-700">
                 <th className="border-b border-neutral-200 px-3 py-2 text-left">Upload Month</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Total Shipped</th>
-                <th className="border-b border-neutral-200 px-3 py-2 text-right">Total Forecasted</th>
+                <th className="border-b border-neutral-200 px-3 py-2 text-right">Total New Forecast</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Total Fcast → SO</th>
               </tr>
             </thead>
@@ -75,22 +75,13 @@ export default function MonthlySummaryTable({ data }: MonthlySummaryTableProps) 
               {filteredData.map((row, idx) => (
                 <tr key={idx} className="odd:bg-white even:bg-neutral-50 hover:bg-neutral-100/70">
                   <td className="px-3 py-2 border-t border-neutral-200">{row.uploadMonthLabel}</td>
-                  <td
-                    className="px-3 py-2 border-t border-neutral-200 text-right"
-                    title={row.shippedJobs.length > 0 ? row.shippedJobs.join(", ") : undefined}
-                  >
+                  <td className="px-3 py-2 border-t border-neutral-200 text-right">
                     {row.totalShipped}
                   </td>
-                  <td
-                    className="px-3 py-2 border-t border-neutral-200 text-right"
-                    title={row.forecastLoadInsJobs.length > 0 ? row.forecastLoadInsJobs.join(", ") : undefined}
-                  >
-                    {row.uniqueForecastJobs}
+                  <td className="px-3 py-2 border-t border-neutral-200 text-right">
+                    {row.totalNewForecast}
                   </td>
-                  <td
-                    className="px-3 py-2 border-t border-neutral-200 text-right"
-                    title={row.forecastConversionsJobs.length > 0 ? `Converted Jobs: ${row.forecastConversionsJobs.join(", ")}` : undefined}
-                  >
+                  <td className="px-3 py-2 border-t border-neutral-200 text-right">
                     {row.totalFcastToSo}
                   </td>
                 </tr>

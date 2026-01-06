@@ -5,6 +5,7 @@ import { uploadFileToSupabase } from "../lib/storage/storage";
 import { sortPeriodsByUploadDate } from "../lib/utils/dateUtils";
 import { PLATFORM_LABELS } from "../lib/core/constants";
 import { fetchMachineIdData, buildMachineIdMap, convertMachineIdMapToRecord } from "../lib/data/machineIds";
+import { getNextUploadId } from "../lib/utils/uploadIdUtils";
 
 interface UseWaterfallUploadsProps {
   salesOrdersList: SalesOrderSummary[];
@@ -32,7 +33,8 @@ export function useWaterfallUploads({
         await uploadFileToSupabase(bucketName, file, "sales-orders");
         const csvText = await file.text();
         const dateToUse = uploadDate ?? new Date();
-        const summary = parseSalesOrdersCsv(csvText, dateToUse);
+        const nextId = getNextUploadId(salesOrdersList, forecastSummaryList);
+        const summary = parseSalesOrdersCsv(csvText, dateToUse, nextId);
         if (summary) {
           const nextSales = sortPeriodsByUploadDate([...salesOrdersList, summary]);
           setSalesOrdersList(nextSales);
@@ -51,7 +53,8 @@ export function useWaterfallUploads({
         await uploadFileToSupabase(bucketName, file, "forecasts");
         const csvText = await file.text();
         const dateToUse = uploadDate ?? new Date();
-        const summary = parseForecastCsv(csvText, dateToUse);
+        const nextId = getNextUploadId(salesOrdersList, forecastSummaryList);
+        const summary = parseForecastCsv(csvText, dateToUse, nextId);
         if (summary) {
           // Fetch machine IDs for this forecast upload
           try {
@@ -92,8 +95,10 @@ export function useWaterfallUploads({
           forecastFile.text(),
         ]);
         
-        const soSummary = parseSalesOrdersCsv(soText, sharedUploadDate);
-        const forecastSummary = parseForecastCsv(forecastText, sharedUploadDate);
+        // Use the same ID for both uploads since they're uploaded together
+        const sharedId = getNextUploadId(salesOrdersList, forecastSummaryList);
+        const soSummary = parseSalesOrdersCsv(soText, sharedUploadDate, sharedId);
+        const forecastSummary = parseForecastCsv(forecastText, sharedUploadDate, sharedId);
         
         // Fetch machine IDs for forecast if it exists
         if (forecastSummary) {

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { MonthlyAccuracyData } from "../types";
+import { SalesOrderSummary } from "../../lib/data/salesOrders";
+import { ForecastSummary } from "../../lib/data/forecasts";
+import { useForecastAccuracyData } from "../hooks/useForecastAccuracyData";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -12,39 +14,50 @@ import {
 } from "@/components/ui/select";
 
 interface MonthlyFcastAccTableProps {
-  data: MonthlyAccuracyData[];
+  salesOrdersList: SalesOrderSummary[];
+  forecastSummaryList: ForecastSummary[];
+  selectedPlatform: string;
 }
 
-export default function MonthlyFcastAccTable({ data }: MonthlyFcastAccTableProps) {
+export default function MonthlyFcastAccTable({ salesOrdersList, forecastSummaryList, selectedPlatform }: MonthlyFcastAccTableProps) {
   const [selectedYear, setSelectedYear] = useState<string | "all">("all");
+
+  // Calculate accuracy data with the selected platform
+  const { monthlyAccuracyData } = useForecastAccuracyData(
+    salesOrdersList,
+    forecastSummaryList,
+    selectedPlatform,
+    "all",
+    "all"
+  );
 
   // Extract available years from data
   const availableYears = useMemo(() => {
     const years = new Set<number>();
-    data.forEach((item) => {
-      const [year] = item.uploadMonthKey.split("-").map(Number);
+    monthlyAccuracyData.forEach((item) => {
+      const [year] = item.forecastMonthKey.split("-").map(Number);
       years.add(year);
     });
     return Array.from(years).sort((a, b) => b - a); // Most recent first
-  }, [data]);
+  }, [monthlyAccuracyData]);
 
   // Filter data by year
   const filteredData = useMemo(() => {
-    if (selectedYear === "all") return data;
-    return data.filter((item) => {
-      const [year] = item.uploadMonthKey.split("-").map(Number);
+    if (selectedYear === "all") return monthlyAccuracyData;
+    return monthlyAccuracyData.filter((item) => {
+      const [year] = item.forecastMonthKey.split("-").map(Number);
       return year === Number(selectedYear);
     });
-  }, [data, selectedYear]);
+  }, [monthlyAccuracyData, selectedYear]);
 
-  if (data.length === 0) return null;
+  if (monthlyAccuracyData.length === 0 || !selectedPlatform) return null;
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-neutral-800">Forecast Accuracy by Upload Month</h2>
+        <h2 className="text-sm font-semibold text-neutral-800">Forecast Accuracy by Month</h2>
         <div className="flex items-center gap-2">
-          <Label className="text-xs font-medium text-neutral-700">Filter by Year:</Label>
+          <Label className="text-xs font-medium text-neutral-700">Year:</Label>
           <Select value={selectedYear} onValueChange={setSelectedYear}>
             <SelectTrigger className="text-xs min-w-[120px] h-8">
               <SelectValue placeholder="Select year" />
@@ -65,33 +78,36 @@ export default function MonthlyFcastAccTable({ data }: MonthlyFcastAccTableProps
           <table className="min-w-full border-collapse text-xs">
             <thead>
               <tr className="bg-neutral-50 text-neutral-700">
-                <th className="border-b border-neutral-200 px-3 py-2 text-left">Upload Month</th>
-                <th className="border-b border-neutral-200 px-3 py-2 text-right">Forecast Jobs</th>
-                <th className="border-b border-neutral-200 px-3 py-2 text-right">Converted Jobs</th>
+                <th className="border-b border-neutral-200 px-3 py-2 text-left">Forecast Month Bucket</th>
+                <th className="border-b border-neutral-200 px-3 py-2 text-right">Max Forecast Qty</th>
+                <th className="border-b border-neutral-200 px-3 py-2 text-right">Actual Shipped Qty</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Accuracy %</th>
               </tr>
             </thead>
             <tbody>
               {filteredData.map((row, idx) => (
                 <tr key={idx} className="odd:bg-white even:bg-neutral-50 hover:bg-neutral-100/70">
-                  <td className="px-3 py-2 border-t border-neutral-200">{row.uploadMonthLabel}</td>
+                  <td className="px-3 py-2 border-t border-neutral-200">{row.forecastMonthLabel}</td>
                   <td
                     className="px-3 py-2 border-t border-neutral-200 text-right"
-                    title={row.forecastLoadInsJobs.length > 0 ? row.forecastLoadInsJobs.join(", ") : undefined}
+                    title="Maximum forecast quantity across all forecast uploads for this month"
                   >
-                    {row.uniqueForecastJobs}
+                    {row.maxForecastQuantity}
                   </td>
                   <td
                     className="px-3 py-2 border-t border-neutral-200 text-right"
-                    title={row.forecastConversionsJobs.length > 0 ? row.forecastConversionsJobs.join(", ") : undefined}
+                    title="Actual shipped quantity for this month"
                   >
-                    {row.uniqueConvertedJobs}
+                    {row.hasShippedData ? row.actualShippedQuantity : "N/A"}
                   </td>
                   <td 
                     className="px-3 py-2 border-t border-neutral-200 text-right font-semibold"
-                    title={`${row.uniqueConvertedJobs} out of ${row.uniqueForecastJobs} forecast jobs converted to SO`}
+                    title={row.hasShippedData 
+                      ? `Accuracy: ${row.actualShippedQuantity} / ${row.maxForecastQuantity} = ${row.forecastAccuracy}%`
+                      : "Accuracy will be calculated when shipped data is uploaded for this month"
+                    }
                   >
-                    {row.forecastAccuracy}%
+                    {row.hasShippedData ? `${row.forecastAccuracy}%` : "N/A"}
                   </td>
                 </tr>
               ))}
