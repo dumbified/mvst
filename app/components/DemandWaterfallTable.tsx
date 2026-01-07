@@ -30,6 +30,7 @@ import {
   getPlatformsPerPeriod,
   generateCellCommentKey,
 } from "../lib/core/waterfallTable";
+import { exportWaterfallToExcel } from "../lib/core/exportExcel";
 import { fetchMachineIdData, buildMachineIdMap, PlatformMonthMachineIdMap } from "../lib/data/machineIds";
 import { type CellComments } from "../lib/storage/stateStorage";
 import { parseDateLabel } from "../lib/utils/dateUtils";
@@ -87,6 +88,7 @@ export default function DemandWaterfallTable({
   const hotTableRef = useRef<HotTableRef | null>(null);
   const getHotInstance = () => hotTableRef.current?.hotInstance as Handsontable | undefined;
   const [, setPlatformMonthMachineIdMap] = useState<PlatformMonthMachineIdMap | undefined>(undefined);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
   
   // Track selected uploads for mass delete
   const [selectedUploads, setSelectedUploads] = useState<Set<number | string>>(new Set());
@@ -736,6 +738,28 @@ export default function DemandWaterfallTable({
     }
   }, [data, months, selectedPlatforms, getRowMetadata, editMode, reapplyBorders, rowColToCommentKey, onCellCommentChange, salesOrdersList, forecastSummaryList, summaryStart]);
 
+  const handleExportExcel = async () => {
+    if (isExporting) return;
+    const hot = getHotInstance();
+    if (!hot || !data.length) return;
+    setIsExporting(true);
+    try {
+      await exportWaterfallToExcel({
+        hot,
+        months,
+        monthStartCol: MONTH_START_COL,
+        mergeBodyCells,
+        getRowMetadata,
+        cellCommentsMap,
+        colWidths,
+      });
+    } catch {
+      // Ignore export errors
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3 p-2 bg-neutral-50 rounded-lg border border-neutral-200">
@@ -768,6 +792,20 @@ export default function DemandWaterfallTable({
           />
           <span className="text-xs text-neutral-700">Totals</span>
         </Label>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={!data.length || !!isExporting}
+            className={`inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
+              !data.length || !!isExporting
+                ? "border-neutral-200 text-neutral-400 bg-neutral-100 cursor-not-allowed"
+                : "border-neutral-300 text-neutral-700 bg-white hover:bg-neutral-100"
+            }`}
+          >
+            Export to Excel
+          </button>
+        </div>
       </div>
 
       {/* Mass Delete Controls */}
