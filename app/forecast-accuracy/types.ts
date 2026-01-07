@@ -53,6 +53,7 @@ export type MonthlyAccuracyData = {
   actualShippedQuantity: number; // Actual shipped quantity for this month
   forecastAccuracy: number; // Forecast accuracy: (actual shipped / max forecast) * 100
   hasShippedData: boolean; // Whether there is actual shipped data for this month
+  shippedJobs?: string[]; // List of shipped job numbers contributing to actualShippedQuantity
 };
 
 export type MonthlySummaryData = {

@@ -26,14 +26,20 @@ export function useDateEditor({
 }: UseDateEditorProps) {
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [editingDateLabel, setEditingDateLabel] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState<number | string | null>(null); // upload ID (preferred) or fallback label
   const [editingDate, setEditingDate] = useState<Date | undefined>(undefined);
   const [editingAnchor, setEditingAnchor] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
   const handleDateEdit = useCallback(
-    (dateLabel: string, anchor?: { top: number; left: number; width: number; height: number }) => {
-      if (datePickerOpen && editingDateLabel === dateLabel) {
+    (
+      key: number | string,
+      dateLabel: string,
+      anchor?: { top: number; left: number; width: number; height: number },
+    ) => {
+      if (datePickerOpen && editingKey === key && editingDateLabel === dateLabel) {
         setDatePickerOpen(false);
         setEditingDateLabel(null);
+        setEditingKey(null);
         setEditingDate(undefined);
         setEditingAnchor(null);
         return;
@@ -46,12 +52,13 @@ export function useDateEditor({
       }
 
       // Set up the date picker dialog
+      setEditingKey(key);
       setEditingDateLabel(dateLabel);
       setEditingDate(currentDate);
       setEditingAnchor(anchor ?? null);
       setDatePickerOpen(true);
     },
-    [datePickerOpen, editingDateLabel]
+    [datePickerOpen, editingDateLabel, editingKey]
   );
 
   const handleDateSelect = useCallback(
@@ -70,12 +77,18 @@ export function useDateEditor({
         return;
       }
 
-      // Update forecasts: change the date label and remove any existing record with the new date
+      const isEditingForecast = (fc: ForecastSummary) =>
+        typeof editingKey === "number"
+          ? fc.id === editingKey
+          : fc.uploadDateLabel === editingDateLabel;
+
+      // Update forecasts: change only the targeted upload's date label,
+      // and remove any *other* record that already uses the new date label
       const nextForecasts = sortPeriodsByUploadDate(
         forecastSummaryList
-          .filter((fc) => fc.uploadDateLabel !== newDateLabel) // Remove any existing record with new date
+          .filter((fc) => !(!isEditingForecast(fc) && fc.uploadDateLabel === newDateLabel))
           .map((fc) =>
-            fc.uploadDateLabel === editingDateLabel
+            isEditingForecast(fc)
               ? {
                   ...fc,
                   uploadDateLabel: newDateLabel,
@@ -85,12 +98,18 @@ export function useDateEditor({
           ),
       );
 
-      // Update sales orders: change the date label and remove any existing record with the new date
+      const isEditingSalesOrder = (so: SalesOrderSummary) =>
+        typeof editingKey === "number"
+          ? so.id === editingKey
+          : so.uploadDateLabel === editingDateLabel;
+
+      // Update sales orders: change only the targeted upload's date label,
+      // and remove any *other* record that already uses the new date label
       const nextSales = sortPeriodsByUploadDate(
         salesOrdersList
-          .filter((so) => so.uploadDateLabel !== newDateLabel) // Remove any existing record with new date
+          .filter((so) => !(!isEditingSalesOrder(so) && so.uploadDateLabel === newDateLabel))
           .map((so) =>
-            so.uploadDateLabel === editingDateLabel
+            isEditingSalesOrder(so)
               ? {
                   ...so,
                   uploadDateLabel: newDateLabel,
@@ -123,15 +142,17 @@ export function useDateEditor({
 
       setDatePickerOpen(false);
       setEditingDateLabel(null);
+      setEditingKey(null);
       setEditingDate(undefined);
       setEditingAnchor(null);
     },
-    [bomCosts, editingDateLabel, forecastSummaryList, salesOrdersList, setForecastSummaryList, setSalesOrdersList],
+    [bomCosts, editingDateLabel, editingKey, forecastSummaryList, salesOrdersList, setForecastSummaryList, setSalesOrdersList],
   );
 
   const closeDatePicker = useCallback(() => {
     setDatePickerOpen(false);
     setEditingDateLabel(null);
+    setEditingKey(null);
     setEditingDate(undefined);
     setEditingAnchor(null);
   }, []);

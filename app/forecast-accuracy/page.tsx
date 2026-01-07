@@ -56,9 +56,14 @@ export default function ForecastAccuracyPage() {
     [salesOrdersList, forecastSummaryList]
   );
 
-  // Ensure selectedPlatform is valid - default to "th3k" if available, otherwise first platform
+  // Ensure selectedPlatform is valid - default to "th3k" if available, otherwise first platform.
+  // Allow special "overall" platform which aggregates all platforms.
   useEffect(() => {
-    if (allPlatforms.length > 0 && (!selectedPlatform || !allPlatforms.includes(selectedPlatform))) {
+    if (
+      allPlatforms.length > 0 &&
+      selectedPlatform !== "overall" &&
+      (!selectedPlatform || !allPlatforms.includes(selectedPlatform))
+    ) {
       const defaultPlatform = allPlatforms.includes("th3k") ? "th3k" : allPlatforms[0];
       setSelectedPlatform(defaultPlatform);
     }

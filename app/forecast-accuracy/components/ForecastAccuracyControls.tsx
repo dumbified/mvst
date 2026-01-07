@@ -58,6 +58,9 @@ export default function ForecastAccuracyControls({
             <SelectValue placeholder="Select platform" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="overall">
+              All Platforms
+            </SelectItem>
             {allPlatforms.map((platform) => (
               <SelectItem key={platform} value={platform}>
                 {platform}

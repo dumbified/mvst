@@ -26,6 +26,7 @@ type UploadControlsProps = {
   onForecastUpload?: (file: File, uploadDate?: Date) => void;
   onCombinedUpload?: (soFile: File, forecastFile: File) => void;
   editMode?: boolean;
+  deleteMode?: boolean;
   onToggleEditMode?: () => void;
 };
 
@@ -34,6 +35,7 @@ export default function UploadControls({
   onForecastUpload,
   onCombinedUpload,
   editMode = false,
+  deleteMode = false,
   onToggleEditMode,
 }: UploadControlsProps) {
   const [open, setOpen] = useState(false);
@@ -173,10 +175,12 @@ export default function UploadControls({
           className={`inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium ${
             editMode
               ? "bg-blue-600 text-white hover:bg-blue-700"
+              : deleteMode
+              ? "bg-red-600 text-white hover:bg-red-700"
               : "border border-neutral-300 text-neutral-700 bg-white hover:bg-neutral-50"
           }`}
         >
-          {editMode ? "Edit Mode: ON" : "Edit Mode"}
+          {editMode ? "Edit Mode" : deleteMode ? "Delete Mode" : "Edit Mode"}
         </button>
       </div>
 

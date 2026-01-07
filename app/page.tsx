@@ -20,8 +20,20 @@ import Link from "next/link";
 
 export default function Home() {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const [editMode, setEditMode] = useState(false);
+  const [mode, setMode] = useState<"normal" | "edit" | "delete">("normal");
   const filterMenuRef = useRef<HTMLDivElement>(null);
+  
+  // Cycle through modes: normal -> edit -> delete -> normal
+  const handleToggleMode = useCallback(() => {
+    setMode(prev => {
+      if (prev === "normal") return "edit";
+      if (prev === "edit") return "delete";
+      return "normal";
+    });
+  }, []);
+  
+  const editMode = mode === "edit";
+  const deleteMode = mode === "delete";
 
   // Load settings on app start (side effect: caches settings for use across the app)
   useSettings();
@@ -98,6 +110,48 @@ export default function Home() {
       const updatedAt = new Date().toISOString();
       
       // Update localStorage immediately to prevent stale data on reload
+      try {
+        localStorage.setItem("mvst_salesOrdersList", JSON.stringify(nextSales));
+        localStorage.setItem("mvst_forecastSummary", JSON.stringify(nextForecasts));
+      } catch {
+        // ignore
+      }
+      setLocalStorageTimestamp(updatedAt);
+      
+      // Save to remote storage with updated timestamp
+      await saveSharedWaterfallState({
+        salesOrdersList: nextSales,
+        forecastSummaryList: nextForecasts,
+        bomCosts,
+        updatedAt,
+      });
+    },
+    [bomCosts, forecastSummaryList, salesOrdersList, setForecastSummaryList, setSalesOrdersList],
+  );
+
+  // Batch delete multiple uploads at once
+  const handleBatchDelete = useCallback(
+    async (idsOrDateLabels: (number | string)[]) => {
+      if (idsOrDateLabels.length === 0) return;
+      
+      // Filter out all selected uploads in a single operation
+      const idsSet = new Set(idsOrDateLabels);
+      const nextSales = salesOrdersList.filter((so) => {
+        const key = so.id ?? so.uploadDateLabel;
+        return !idsSet.has(key);
+      });
+      
+      const nextForecasts = forecastSummaryList.filter((fc) => {
+        const key = fc.id ?? fc.uploadDateLabel;
+        return !idsSet.has(key);
+      });
+      
+      // Update state immediately
+      setSalesOrdersList(nextSales);
+      setForecastSummaryList(nextForecasts);
+      const updatedAt = new Date().toISOString();
+      
+      // Update localStorage immediately
       try {
         localStorage.setItem("mvst_salesOrdersList", JSON.stringify(nextSales));
         localStorage.setItem("mvst_forecastSummary", JSON.stringify(nextForecasts));
@@ -242,7 +296,8 @@ export default function Home() {
               onForecastUpload={handleForecastUpload}
               onCombinedUpload={handleCombinedUpload}
               editMode={editMode}
-              onToggleEditMode={() => setEditMode((v) => !v)}
+              deleteMode={deleteMode}
+              onToggleEditMode={handleToggleMode}
             />
             <button
               type="button"
@@ -311,8 +366,10 @@ export default function Home() {
               await persistSharedState(salesOrdersList, forecastSummaryList, bomCosts, updatedComments);
             }}
             editMode={editMode}
+            deleteMode={deleteMode}
             onDateEdit={handleDateEdit}
             onDateDelete={handleDeleteByDate}
+            onBatchDelete={handleBatchDelete}
           />
         </div>
       </section>

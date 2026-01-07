@@ -17,6 +17,9 @@ export const SUMMARY_COLUMNS: { key: string; label: string }[] = [
   { key: "ttlDmdRm", label: "Ttl Dmd (RM)" },
 ];
 
+// Number of non-month columns before the repeating month data starts
+const MONTH_START_COL = 3; // Report Date | Forecast load-ins date | Platform
+
 
 export type RowMetadata = {
   periodIndex: number;
@@ -154,7 +157,9 @@ export function buildDataRows({
     periodVisiblePlatforms.forEach((platform) => {
       const row: (string | number)[] = [];
       const displayUploadLabel = periodForecast?.uploadDateLabel ?? salesOrders.uploadDateLabel;
+      const forecastLoadInsDateLabel = periodForecast?.forecastLoadInsDateLabel ?? "";
       row.push(displayUploadLabel);
+      row.push(forecastLoadInsDateLabel);
       row.push(platform);
 
       let soSum = 0;
@@ -206,10 +211,11 @@ export function buildDataRows({
     if (showTotals) {
       const totalsRow: (string | number)[] = [];
       totalsRow.push("");
+      totalsRow.push("");
       totalsRow.push("Total");
 
       for (let mi = 0; mi < months.length; mi++) {
-        const soColIndex = 2 + mi * 3;
+        const soColIndex = MONTH_START_COL + mi * 3;
         const fcstColIndex = soColIndex + 1;
         const ssColIndex = soColIndex + 2;
         let soTotal = 0;
@@ -227,7 +233,7 @@ export function buildDataRows({
         totalsRow.push(ssTotal || "");
       }
 
-      const summaryStart = 2 + months.length * 3;
+      const summaryStart = MONTH_START_COL + months.length * 3;
       for (let i = 0; i < summaryColumns.length; i++) {
         const colDef = summaryColumns[i];
         if (colDef.key === "bomCostRm") {
@@ -276,13 +282,15 @@ export function getPlatformsPerPeriod(
 
 export function createNestedHeaders(months: MonthColumn[]): NestedHeaders {
   const topRow: HeaderCell[] = [
-    { label: "Created Date", colspan: 1 },
+    { label: "Report Date", colspan: 1 },
+    { label: "Forecast load-ins date", colspan: 1 },
     { label: "Platform", colspan: 1 },
     ...months.map((month) => ({ label: month.label, colspan: 3 })),
     { label: "Summary", colspan: SUMMARY_COLUMNS.length, className: "summary-header" },
   ];
 
   const secondRow: HeaderCell[] = [
+    "",
     "",
     "",
     ...months.flatMap(() => ["SO", "Forecast", "SS"]),
@@ -293,7 +301,7 @@ export function createNestedHeaders(months: MonthColumn[]): NestedHeaders {
 }
 
 export function createColumnWidths(months: MonthColumn[]) {
-  const widths: number[] = [120, 90];
+  const widths: number[] = [120, 140, 90];
   months.forEach(() => widths.push(60, 60, 60));
   return widths;
 }
@@ -313,11 +321,14 @@ export function createMergeCells(periodCount: number, rowsPerPeriod: number | nu
       continue;
     }
 
-    merges.push({
-      row: currentRow,
-      col: 0,
-      rowspan: periodRows,
-      colspan: 1,
+    // Merge Created Date and Forecast load-ins date down the period block
+    [0, 1].forEach((col) => {
+      merges.push({
+        row: currentRow,
+        col,
+        rowspan: periodRows,
+        colspan: 1,
+      });
     });
     currentRow += periodRows;
   }
@@ -443,7 +454,7 @@ export function buildCellComments({
         if (!periodMonthKeys.has(month.key)) return;
 
         const bucket = totals[month.key];
-        const colIndex = 2 + monthIndex * 3;
+        const colIndex = MONTH_START_COL + monthIndex * 3;
 
         // Add SO comments (job numbers + custom comments)
         const soCommentKey = generateCellCommentKey(salesOrders.uploadDateLabel, platform, month.key, "so");

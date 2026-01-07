@@ -50,7 +50,23 @@ export default function MonthlyFcastAccTable({ salesOrdersList, forecastSummaryL
     });
   }, [monthlyAccuracyData, selectedYear]);
 
-  if (monthlyAccuracyData.length === 0 || !selectedPlatform) return null;
+  // If no platform or "All Platforms" is selected, show a helper message instead of the table
+  if (!selectedPlatform || selectedPlatform === "overall") {
+    return (
+      <div className="text-neutral-500 italic center">
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <p className="text-sm">Please select a platform above.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If there is a platform but no data, hide the table
+  if (monthlyAccuracyData.length === 0) {
+    return null;
+  }
 
   return (
     <div className="space-y-3">
@@ -96,7 +112,13 @@ export default function MonthlyFcastAccTable({ salesOrdersList, forecastSummaryL
                   </td>
                   <td
                     className="px-3 py-2 border-t border-neutral-200 text-right"
-                    title="Actual shipped quantity for this month"
+                    title={
+                      row.hasShippedData
+                        ? (row.shippedJobs && row.shippedJobs.length > 0
+                            ? row.shippedJobs.join(", ")
+                            : "Actual shipped quantity for this month")
+                        : "No shipped data yet for this month"
+                    }
                   >
                     {row.hasShippedData ? row.actualShippedQuantity : "N/A"}
                   </td>
