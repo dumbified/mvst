@@ -13,6 +13,17 @@ export type ForecastSummary = {
   months: { key: string; label: string }[];
   totals: Record<string, Record<string, number>>; // Changed from PlatformKey to string to support dynamic platforms
   machineIds?: Record<string, Record<string, string[]>>; // platform -> monthKey -> machineIds[]
+  /**
+   * Latest "Created Date" from the forecast CSV (column J), used as Forecast load-ins date.
+   * Stored as a formatted label for display in the Demand Waterfall table.
+   */
+  forecastLoadInsDateLabel?: string;
+  /**
+   * Optional map from platform + forecast month to the month key of the "Changed DT" column.
+   * Used for bucketing forecast-to-SO conversions by the month when the change happened.
+   * platform -> forecastMonthKey -> changedDtMonthKey
+   */
+  conversionMonthMap?: Record<string, Record<string, string>>;
 };
 
 const sanitizeQuantity = (value: string) => {
@@ -126,6 +137,10 @@ export const parseForecastCsv = (
   const dateIndex = normalizedHeaders.indexOf("forecastdate");
   const qtyIndex = normalizedHeaders.indexOf("forecastqty");
   const inactiveIndex = normalizedHeaders.indexOf("forecastinactive");
+  // "Created Date" column (Forecast load-ins date source)
+  const createdDateIndex = normalizedHeaders.indexOf("createddate");
+  // "Changed DT" column from raw forecast CSV (e.g. "2/1/2026 09:30:38")
+  const changedDtIndex = normalizedHeaders.indexOf("changeddt");
 
   if (partIndex === -1 || dateIndex === -1 || qtyIndex === -1) {
     console.error("[Forecast] Missing required columns:", {
@@ -145,6 +160,11 @@ export const parseForecastCsv = (
   let processedCount = 0;
   let skippedCount = 0;
   const skipReasons: Record<string, number> = {};
+
+  // Track Changed DT month per platform + forecast month
+  const conversionMonthMap: Record<string, Record<string, string>> = {};
+  // Track latest Created Date across all rows for this upload
+  let latestCreatedDate: Date | null = null;
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
@@ -194,6 +214,38 @@ export const parseForecastCsv = (
       }
       totals[platform][monthKey] = (totals[platform][monthKey] ?? 0) + quantity;
       processedCount++;
+
+      // Track latest Created Date for Forecast load-ins date label
+      if (createdDateIndex !== -1) {
+        const createdRaw = (cells[createdDateIndex] ?? "").trim();
+        if (createdRaw) {
+          const createdDate = parseDmyDateTime(createdRaw);
+          if (createdDate) {
+            if (!latestCreatedDate || createdDate > latestCreatedDate) {
+              latestCreatedDate = createdDate;
+            }
+          }
+        }
+      }
+
+      // Capture month of "Changed DT" (when forecast was changed / converted)
+      if (changedDtIndex !== -1) {
+        const changedDtRaw = (cells[changedDtIndex] ?? "").trim();
+        if (changedDtRaw) {
+          const changedDt = parseDmyDateTime(changedDtRaw);
+          if (changedDt) {
+            const changedMonthKey = monthKeyFromDate(changedDt);
+            if (!conversionMonthMap[platform]) {
+              conversionMonthMap[platform] = {};
+            }
+            const existing = conversionMonthMap[platform][monthKey];
+            // Prefer the latest Changed DT month if multiple rows contribute to same forecast month
+            if (!existing || compareMonthKeys(existing, changedMonthKey) < 0) {
+              conversionMonthMap[platform][monthKey] = changedMonthKey;
+            }
+          }
+        }
+      }
     } else {
       skippedCount++;
       skipReasons["date_out_of_range"] = (skipReasons["date_out_of_range"] || 0) + 1;
@@ -224,6 +276,8 @@ export const parseForecastCsv = (
     uploadDateLabel: formatFullDate(uploadDate),
     months,
     totals,
+    forecastLoadInsDateLabel: latestCreatedDate ? formatFullDate(latestCreatedDate) : undefined,
+    conversionMonthMap: Object.keys(conversionMonthMap).length > 0 ? conversionMonthMap : undefined,
   };
 };
 

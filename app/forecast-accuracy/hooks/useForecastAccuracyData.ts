@@ -286,76 +286,178 @@ export function useForecastAccuracyData(
     return monthlyData;
   }, [forecastSummaryList, salesOrdersList, selectedPlatform]);
 
-  // Calculate monthly summary data (grouped by upload month)
-  // Shows totals: Total Shipped, Total New Forecast, Total Fcast → SO
+  // Calculate monthly summary data (grouped by month bucket, not upload month)
+  // Shows totals per bucket: Total Shipped (actual shipped from latest SO snapshot),
+  // Total New Forecast, Total Fcast → SO
   const monthlySummaryData = useMemo<MonthlySummaryData[]>(() => {
     if (uploadChanges.length === 0) return [];
 
-    // Group uploads by the month they were uploaded
-    const uploadsByMonth = new Map<string, UploadChanges[]>();
-    uploadChanges.forEach((change) => {
-      const uploadDate = parseDateLabel(change.uploadDateLabel);
-      if (uploadDate) {
-        const uploadMonthKey = monthKeyFromDate(uploadDate);
-        const existing = uploadsByMonth.get(uploadMonthKey) || [];
-        existing.push(change);
-        uploadsByMonth.set(uploadMonthKey, existing);
+    const isFutureMonth = (key: string) => {
+      const [y, m] = key.split("-").map(Number);
+      const d = new Date(y, m - 1, 1);
+      const now = new Date();
+      return d > now;
+    };
+
+    // Months currently visible in the demand waterfall (union of SO + Forecast months)
+    const allowedMonthKeys = new Set<string>();
+    salesOrdersList.forEach((so) => {
+      so.months.forEach((m) => allowedMonthKeys.add(m.key));
+    });
+    forecastSummaryList.forEach((fc) => {
+      fc.months.forEach((m) => allowedMonthKeys.add(m.key));
+    });
+
+    // Map each forecast upload to its Forecast load-ins date bucket month (if available)
+    // Used only for the "Total New Forecast" column so that it follows the Forecast load-ins date.
+    const loadInsMonthByUpload = new Map<string, string>();
+    forecastSummaryList.forEach((fc) => {
+      if (fc.forecastLoadInsDateLabel) {
+        const loadInsDate = parseDateLabel(fc.forecastLoadInsDateLabel);
+        if (loadInsDate) {
+          loadInsMonthByUpload.set(fc.uploadDateLabel, monthKeyFromDate(loadInsDate));
+        }
       }
     });
 
-    const summaryData: MonthlySummaryData[] = [];
+    // Group changes by their month bucket (change.monthKey) for forecast/new-forecast/conversions.
+    // We will override totalShipped with actual shipped from the latest SO snapshot below.
+    const byBucketMonth = new Map<string, {
+      totalShipped: number;
+      totalNewForecast: number;
+      totalFcastToSo: number;
+      shippedJobs: string[];
+      forecastLoadInsJobs: string[];
+      forecastConversionsJobs: string[];
+    }>();
 
-    uploadsByMonth.forEach((uploads, uploadMonthKey) => {
-      // Collect all changes from all uploads in this upload month
-      const allChanges = uploads.flatMap((change) => {
-        if (selectedPlatform === "overall") {
-          return change.changes;
+    uploadChanges.forEach((upload) => {
+      const scopedChanges =
+        selectedPlatform === "overall"
+          ? upload.changes
+          : upload.changes.filter((c) => c.platform === selectedPlatform);
+
+      scopedChanges.forEach((change) => {
+        // Default bucket month is the change's monthKey (forecast / shipped bucket)
+        // For "forecast_load_in" we prefer the Forecast load-ins date bucket month if available.
+        let bucketMonthKey = change.monthKey;
+        if (change.type === "forecast_load_in") {
+          const loadInsKey = loadInsMonthByUpload.get(change.uploadDateLabel);
+          if (loadInsKey) {
+            bucketMonthKey = loadInsKey;
+          }
         }
-        return change.changes.filter((c) => c.platform === selectedPlatform);
-      });
 
-      // Calculate totals
-      let totalShipped = 0;
-      let totalNewForecast = 0;
-      let totalFcastToSo = 0;
+        if (isFutureMonth(bucketMonthKey)) return;
 
-      // Collect job numbers for tooltips
-      const shippedJobs: string[] = [];
-      const forecastLoadInsJobs: string[] = [];
-      const forecastConversionsJobs: string[] = [];
+        let agg = byBucketMonth.get(bucketMonthKey);
+        if (!agg) {
+          agg = {
+            totalShipped: 0,
+            totalNewForecast: 0,
+            totalFcastToSo: 0,
+            shippedJobs: [],
+            forecastLoadInsJobs: [],
+            forecastConversionsJobs: [],
+          };
+          byBucketMonth.set(bucketMonthKey, agg);
+        }
 
-      allChanges.forEach((change) => {
         if (change.type === "shipped") {
-          totalShipped += change.quantity;
+          // We'll replace totalShipped later with actual shipped snapshot; keep jobs for tooltips.
           if (change.jobNumbers && change.jobNumbers.length > 0) {
-            shippedJobs.push(...change.jobNumbers);
+            agg.shippedJobs.push(...change.jobNumbers);
           }
         } else if (change.type === "forecast_load_in") {
-          totalNewForecast += change.quantity;
+          agg.totalNewForecast += change.quantity;
           if (change.jobNumbers && change.jobNumbers.length > 0) {
-            forecastLoadInsJobs.push(...change.jobNumbers);
+            agg.forecastLoadInsJobs.push(...change.jobNumbers);
           }
         } else if (change.type === "forecast_to_so_conversion") {
-          totalFcastToSo += change.quantity;
+          agg.totalFcastToSo += change.quantity;
           if (change.jobNumbers && change.jobNumbers.length > 0) {
-            forecastConversionsJobs.push(...change.jobNumbers);
+            agg.forecastConversionsJobs.push(...change.jobNumbers);
           }
         }
-      });
-
-      summaryData.push({
-        uploadMonthKey,
-        uploadMonthLabel: formatMonthLabel(uploadMonthKey),
-        totalShipped,
-        totalNewForecast,
-        totalFcastToSo,
-        shippedJobs: [...new Set(shippedJobs)], // Remove duplicates
-        forecastLoadInsJobs: [...new Set(forecastLoadInsJobs)], // Remove duplicates
-        forecastConversionsJobs: [...new Set(forecastConversionsJobs)], // Remove duplicates
       });
     });
 
-    // Sort by upload month key (chronological order)
+    // Build summary data from change map
+    const summaryData: MonthlySummaryData[] = [];
+    byBucketMonth.forEach((agg, bucketMonthKey) => {
+      if (!allowedMonthKeys.has(bucketMonthKey)) return;
+      summaryData.push({
+        uploadMonthKey: bucketMonthKey,
+        uploadMonthLabel: formatMonthLabel(bucketMonthKey),
+        totalShipped: agg.totalShipped, // will override below
+        totalNewForecast: agg.totalNewForecast,
+        totalFcastToSo: agg.totalFcastToSo,
+        shippedJobs: [...new Set(agg.shippedJobs)],
+        forecastLoadInsJobs: [...new Set(agg.forecastLoadInsJobs)],
+        forecastConversionsJobs: [...new Set(agg.forecastConversionsJobs)],
+      });
+    });
+
+    // Override Total Shipped with actual shipped from the latest SO snapshot
+    if (salesOrdersList.length > 0) {
+      const latestSo = [...salesOrdersList].sort(
+        (a, b) => (parseDateLabel(b.uploadDateLabel)?.getTime() ?? 0) - (parseDateLabel(a.uploadDateLabel)?.getTime() ?? 0)
+      )[0];
+
+      if (latestSo) {
+        const addShipped = (platformKey: string, monthKey: string, qty: number) => {
+          if (!allowedMonthKeys.has(monthKey) || isFutureMonth(monthKey)) return;
+          let entry = summaryData.find((s) => s.uploadMonthKey === monthKey);
+          if (!entry) {
+            entry = {
+              uploadMonthKey: monthKey,
+              uploadMonthLabel: formatMonthLabel(monthKey),
+              totalShipped: 0,
+              totalNewForecast: 0,
+              totalFcastToSo: 0,
+              shippedJobs: [],
+              forecastLoadInsJobs: [],
+              forecastConversionsJobs: [],
+            };
+            summaryData.push(entry);
+          }
+          entry.totalShipped += qty;
+        };
+
+        Object.entries(latestSo.totals).forEach(([platform, monthBuckets]) => {
+          if (selectedPlatform !== "overall" && platform !== selectedPlatform) return;
+          Object.entries(monthBuckets).forEach(([monthKey, bucket]) => {
+            const shippedQty = Number(bucket.shipped ?? 0);
+            if (shippedQty > 0) {
+              addShipped(platform, monthKey, shippedQty);
+            }
+          });
+        });
+      }
+    }
+
+    // Ensure past/ongoing months that exist in waterfall are present even if zero
+    const now = new Date();
+    allowedMonthKeys.forEach((monthKey) => {
+      const [y, m] = monthKey.split("-").map(Number);
+      const monthDate = new Date(y, m - 1, 1);
+      if (monthDate > now) return; // only include months that have happened or current
+      const existing = summaryData.find((s) => s.uploadMonthKey === monthKey);
+      if (!existing) {
+        summaryData.push({
+          uploadMonthKey: monthKey,
+          uploadMonthLabel: formatMonthLabel(monthKey),
+          totalShipped: 0,
+          totalNewForecast: 0,
+          totalFcastToSo: 0,
+          shippedJobs: [],
+          forecastLoadInsJobs: [],
+          forecastConversionsJobs: [],
+        });
+      }
+    });
+
+    // Sort by bucket month key (chronological order)
     summaryData.sort((a, b) => {
       const [yearA, monthA] = a.uploadMonthKey.split("-").map(Number);
       const [yearB, monthB] = b.uploadMonthKey.split("-").map(Number);
@@ -364,7 +466,7 @@ export function useForecastAccuracyData(
     });
 
     return summaryData;
-  }, [uploadChanges, selectedPlatform]);
+  }, [uploadChanges, selectedPlatform, forecastSummaryList]);
 
   return {
     uploadChanges,

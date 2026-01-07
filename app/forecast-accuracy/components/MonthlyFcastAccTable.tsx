@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 interface MonthlyFcastAccTableProps {
   salesOrdersList: SalesOrderSummary[];
@@ -104,32 +105,52 @@ export default function MonthlyFcastAccTable({ salesOrdersList, forecastSummaryL
               {filteredData.map((row, idx) => (
                 <tr key={idx} className="odd:bg-white even:bg-neutral-50 hover:bg-neutral-100/70">
                   <td className="px-3 py-2 border-t border-neutral-200">{row.forecastMonthLabel}</td>
-                  <td
-                    className="px-3 py-2 border-t border-neutral-200 text-right"
-                    title="Maximum forecast quantity across all forecast uploads for this month"
-                  >
+                  <td className="px-3 py-2 border-t border-neutral-200 text-right">
                     {row.maxForecastQuantity}
                   </td>
-                  <td
-                    className="px-3 py-2 border-t border-neutral-200 text-right"
-                    title={
-                      row.hasShippedData
-                        ? (row.shippedJobs && row.shippedJobs.length > 0
-                            ? row.shippedJobs.join(", ")
-                            : "Actual shipped quantity for this month")
-                        : "No shipped data yet for this month"
-                    }
-                  >
-                    {row.hasShippedData ? row.actualShippedQuantity : "N/A"}
+                  <td className="px-3 py-2 border-t border-neutral-200 text-right">
+                    {row.hasShippedData && row.shippedJobs && row.shippedJobs.length > 0 ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-help">{row.actualShippedQuantity}</span>
+                        </TooltipTrigger>
+                        <TooltipContent 
+                          className="bg-white border border-neutral-200 text-neutral-800 shadow-lg max-w-md"
+                          arrowClassName="bg-white border-white fill-white"
+                        >
+                          <div className="max-h-60 overflow-y-auto pr-1">
+                            <div className="flex flex-wrap gap-1">
+                              {row.shippedJobs.map((job, i) => (
+                                <span key={i} className="inline-block bg-neutral-100 px-2 py-0.5 rounded text-xs">
+                                  {job}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      row.hasShippedData ? row.actualShippedQuantity : "N/A"
+                    )}
                   </td>
-                  <td 
-                    className="px-3 py-2 border-t border-neutral-200 text-right font-semibold"
-                    title={row.hasShippedData 
-                      ? `Accuracy: ${row.actualShippedQuantity} / ${row.maxForecastQuantity} = ${row.forecastAccuracy}%`
-                      : "Accuracy will be calculated when shipped data is uploaded for this month"
-                    }
-                  >
-                    {row.hasShippedData ? `${row.forecastAccuracy}%` : "N/A"}
+                  <td className="px-3 py-2 border-t border-neutral-200 text-right font-semibold">
+                    {row.hasShippedData ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-help">{row.forecastAccuracy}%</span>
+                        </TooltipTrigger>
+                        <TooltipContent 
+                          className="bg-white border border-neutral-200 text-neutral-800 shadow-lg"
+                          arrowClassName="bg-white border-white fill-white"
+                        >
+                          <div className="text-xs">
+                            Accuracy: {row.actualShippedQuantity} / {row.maxForecastQuantity} = {row.forecastAccuracy}%
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      "N/A"
+                    )}
                   </td>
                 </tr>
               ))}

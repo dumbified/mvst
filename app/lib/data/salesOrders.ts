@@ -223,6 +223,14 @@ export const parseSalesOrdersCsv = (
       continue;
     }
 
+    const jobNumber = jobNumberIndex !== -1 ? (cells[jobNumberIndex] ?? "").trim() : "";
+    // Skip rows without a job number entirely (avoid counting quantity with no job linkage)
+    if (!jobNumber) {
+      skippedCount++;
+      skipReasons["no_job_number"] = (skipReasons["no_job_number"] || 0) + 1;
+      continue;
+    }
+
     const quantity = sanitizeQuantity(cells[orderQtyIndex] ?? "");
     if (!quantity) {
       skippedCount++;
@@ -248,34 +256,29 @@ export const parseSalesOrdersCsv = (
       }
     }
 
-    if (jobNumberIndex !== -1) {
-      const jobNumber = (cells[jobNumberIndex] ?? "").trim();
-      if (jobNumber) {
-        const normalizedStatus =
-          rawStatus === "shipped"
-            ? "shipped"
-            : rawStatus === "open"
-              ? "open"
-              : rawStatus === "void"
-                ? "void"
-                : "other";
-        if (!bucket.jobStatus) bucket.jobStatus = {};
-        bucket.jobStatus[jobNumber] = normalizedStatus;
-        
-        // Only add job number to jobNumbers array if it's NOT shipped
-        // Shipped jobs should NOT appear in comments/demand waterfall
-        if (normalizedStatus !== "shipped") {
-          if (!bucket.jobNumbers.includes(jobNumber)) {
-            bucket.jobNumbers.push(jobNumber);
+    const normalizedStatus =
+      rawStatus === "shipped"
+        ? "shipped"
+        : rawStatus === "open"
+          ? "open"
+          : rawStatus === "void"
+            ? "void"
+            : "other";
+    if (!bucket.jobStatus) bucket.jobStatus = {};
+    bucket.jobStatus[jobNumber] = normalizedStatus;
+    
+    // Only add job number to jobNumbers array if it's NOT shipped
+    // Shipped jobs should NOT appear in comments/demand waterfall
+    if (normalizedStatus !== "shipped") {
+      if (!bucket.jobNumbers.includes(jobNumber)) {
+        bucket.jobNumbers.push(jobNumber);
       }
-        } else {
-          // If job is shipped, remove it from jobNumbers if it was previously added
-          // (handles case where same job appears in multiple uploads with different statuses)
-          const jobIndex = bucket.jobNumbers.indexOf(jobNumber);
-          if (jobIndex !== -1) {
-            bucket.jobNumbers.splice(jobIndex, 1);
-          }
-        }
+    } else {
+      // If job is shipped, remove it from jobNumbers if it was previously added
+      // (handles case where same job appears in multiple uploads with different statuses)
+      const jobIndex = bucket.jobNumbers.indexOf(jobNumber);
+      if (jobIndex !== -1) {
+        bucket.jobNumbers.splice(jobIndex, 1);
       }
     }
   }

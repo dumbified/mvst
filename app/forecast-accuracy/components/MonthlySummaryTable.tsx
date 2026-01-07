@@ -42,7 +42,7 @@ export default function MonthlySummaryTable({ data }: MonthlySummaryTableProps) 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-neutral-800">Summary by Month</h2>
+        <h2 className="text-sm font-semibold text-neutral-800">Summary by Bucket Month</h2>
         <div className="flex items-center gap-2">
           <Label className="text-xs font-medium text-neutral-700">Filter by Year:</Label>
           <Select value={selectedYear} onValueChange={setSelectedYear}>
@@ -65,7 +65,7 @@ export default function MonthlySummaryTable({ data }: MonthlySummaryTableProps) 
           <table className="min-w-full border-collapse text-xs">
             <thead>
               <tr className="bg-neutral-50 text-neutral-700">
-                <th className="border-b border-neutral-200 px-3 py-2 text-left">Upload Month</th>
+                <th className="border-b border-neutral-200 px-3 py-2 text-left">Month Bucket</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Total Shipped</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Total New Forecast</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Total Fcast → SO</th>

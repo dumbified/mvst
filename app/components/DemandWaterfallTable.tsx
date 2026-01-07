@@ -401,6 +401,42 @@ export default function DemandWaterfallTable({
     return map;
   }, [salesOrdersList, forecastSummaryList, visiblePlatforms, months, showTotals]);
 
+  // Map row index -> platform for quick lookup when rendering (platform rows only)
+  const rowPlatformMap = useMemo(() => {
+    const map = new Map<number, string>();
+    const rowsPerPeriodArray = rowsPerPeriod;
+
+    const cumulativeRows: number[] = [];
+    let total = 0;
+    rowsPerPeriodArray.forEach((count) => {
+      cumulativeRows.push(total);
+      total += count;
+    });
+
+    const forecastMap = new Map<string, ForecastSummary>();
+    forecastSummaryList.forEach((fc) => {
+      forecastMap.set(fc.uploadDateLabel, fc);
+    });
+
+    effectivePeriods.forEach((salesOrders, periodIndex) => {
+      const periodForecast = forecastMap.get(salesOrders.uploadDateLabel);
+
+      const periodPlatforms = new Set<string>();
+      Object.keys(salesOrders.totals).forEach((p) => periodPlatforms.add(p));
+      if (periodForecast) {
+        Object.keys(periodForecast.totals).forEach((p) => periodPlatforms.add(p));
+      }
+      const periodVisiblePlatforms = visiblePlatforms.filter((p) => periodPlatforms.has(p));
+
+      periodVisiblePlatforms.forEach((platform, platformIndex) => {
+        const rowIndex = cumulativeRows[periodIndex] + platformIndex;
+        map.set(rowIndex, platform);
+      });
+    });
+
+    return map;
+  }, [effectivePeriods, forecastSummaryList, visiblePlatforms, rowsPerPeriod]);
+
   // Convert comments array to a Map for quick lookup
   const cellCommentsMap = useMemo(() => {
     const map = new Map<string, { value: string }>();
@@ -835,6 +871,30 @@ export default function DemandWaterfallTable({
           border: 0.1px solid #000000 !important;
         }
         
+        /* Quantity/job list mismatch indicator */
+        .hot-waterfall .qty-mismatch {
+          position: relative;
+          background-color: #fff7ed !important;
+        }
+        .hot-waterfall .qty-mismatch::after {
+          content: "!";
+          position: absolute;
+          top: 2px;
+          right: 2px;
+          width: 14px;
+          height: 14px;
+          border-radius: 9999px;
+          background: #f97316;
+          color: #ffffff;
+          font-weight: 700;
+          font-size: 9px;
+          line-height: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          pointer-events: none;
+        }
+
         /* Ensure borders persist even when cells are being edited */
         .hot-waterfall .dark-border-cell input,
         .hot-waterfall .dark-border-cell textarea,
@@ -912,6 +972,7 @@ export default function DemandWaterfallTable({
             // Get row metadata
             const metadata = getRowMetadata(row);
             const { periodIndex, platformIndex, isTotals, validMonthKeys } = metadata;
+            const platformForRow = rowPlatformMap.get(row);
             
             // Determine if this column is a month data column (SO, Forecast, or SS)
             const summaryStart = MONTH_START_COL + months.length * 3;
@@ -926,6 +987,31 @@ export default function DemandWaterfallTable({
               if (monthIndex >= 0 && monthIndex < months.length) {
                 const monthKey = months[monthIndex].key;
                 isInValidMonth = validMonthKeys.has(monthKey);
+              }
+            }
+
+            // Detect quantity vs job list mismatch on SO cells
+            const isSoColumn = isMonthColumn && ((col - MONTH_START_COL) % 3 === 0);
+            let hasQtyMismatch = false;
+            let mismatchTitle: string | undefined;
+            if (
+              isSoColumn &&
+              platformForRow &&
+              !isTotals &&
+              isInValidMonth &&
+              monthIndex >= 0 &&
+              periodIndex >= 0
+            ) {
+              const monthKey = months[monthIndex].key;
+              const period = effectivePeriods[periodIndex];
+              const bucket = period?.totals?.[platformForRow]?.[monthKey];
+              if (bucket) {
+                const quantity = Number(bucket.quantity ?? 0);
+                const jobCount = bucket.jobNumbers?.length ?? 0;
+                if (quantity !== jobCount) {
+                  hasQtyMismatch = true;
+                  mismatchTitle = `Quantity ${quantity} differs from job list count ${jobCount}`;
+                }
               }
             }
             
@@ -1015,6 +1101,14 @@ export default function DemandWaterfallTable({
             // Apply summary cell styling
             if (isSummaryColumn) {
               classNames.push("summary-cell");
+            }
+
+            // Apply mismatch indicator styling
+            if (hasQtyMismatch) {
+              classNames.push("qty-mismatch");
+              if (!props.title) {
+                props.title = mismatchTitle;
+              }
             }
             
             // Apply totals row styling

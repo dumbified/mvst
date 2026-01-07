@@ -223,25 +223,8 @@ function compareSalesOrders(
         // This could be a data correction or status change, but not a cancellation
         // Don't track it as a change
       } else {
-        // Job completely disappeared - check its previous status
-        const prevStatus = prevBucket?.jobStatus?.[jobNumber];
-        const wasShipped = prevStatus === "shipped";
-        const isMonthRelevant = isMonthWithinTrackingWindow(monthKey, currentUploadDate, current.months);
-        
-        if (wasShipped && isMonthRelevant) {
-          // Job was shipped in previous upload and disappeared - count as shipped
-          // 1 job = 1 quantity
-          changes.push({
-            type: "shipped",
-            platform: platform as PlatformKey,
-            monthKey,
-            quantity: 1,
-            jobNumbers: [jobNumber],
-            uploadDateLabel: current.uploadDateLabel,
-          });
-        }
-        // Don't track sales order jobs as cancelled - only track forecast cancellations
-        // If was void/other or was shipped/open but not within tracking window, don't track it
+        // Job completely disappeared. Do not count disappearance as shipped.
+        // Intentionally no change record here.
       }
     });
   });
@@ -383,10 +366,19 @@ function compareForecasts(
       });
 
       if (convertedJobs.length > 0) {
+        // Use Changed DT month bucket for conversions when available.
+        // Prefer mapping from the CURRENT forecast (where the change is most recent),
+        // but fall back to the PREVIOUS forecast's mapping when the bucket disappeared
+        // from the current upload (e.g. month no longer exists in current.totals).
+        const convMonthFromChangedDt =
+          current.conversionMonthMap?.[platform as PlatformKey]?.[monthKey] ??
+          previous?.conversionMonthMap?.[platform as PlatformKey]?.[monthKey];
+        const conversionMonthKey = convMonthFromChangedDt ?? monthKey;
+
         changes.push({
           type: "forecast_to_so_conversion",
           platform: platform as PlatformKey,
-          monthKey,
+          monthKey: conversionMonthKey,
           quantity: convertedJobs.length,
           jobNumbers: convertedJobs,
           uploadDateLabel: current.uploadDateLabel,
