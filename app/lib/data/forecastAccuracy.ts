@@ -752,14 +752,14 @@ function calculateUploadChanges(
         forecastVariance: { positive: 0, negative: 0, positiveJobs: [], negativeJobs: [] },
       }
     : {
-        shipped: allChanges.filter((c) => c.type === "shipped").reduce((sum, c) => sum + c.quantity, 0),
-        movedToLater: allChanges.filter((c) => c.type === "moved_to_later_month").reduce((sum, c) => sum + c.quantity, 0),
-        forecastLoadIns: allChanges.filter((c) => c.type === "forecast_load_in").reduce((sum, c) => sum + c.quantity, 0),
-        forecastConversions: allChanges.filter((c) => c.type === "forecast_to_so_conversion").reduce((sum, c) => sum + c.quantity, 0),
-        cancelledForecast: allChanges.filter((c) => c.type === "cancelled_forecast").reduce((sum, c) => sum + c.quantity, 0),
+    shipped: allChanges.filter((c) => c.type === "shipped").reduce((sum, c) => sum + c.quantity, 0),
+    movedToLater: allChanges.filter((c) => c.type === "moved_to_later_month").reduce((sum, c) => sum + c.quantity, 0),
+    forecastLoadIns: allChanges.filter((c) => c.type === "forecast_load_in").reduce((sum, c) => sum + c.quantity, 0),
+    forecastConversions: allChanges.filter((c) => c.type === "forecast_to_so_conversion").reduce((sum, c) => sum + c.quantity, 0),
+    cancelledForecast: allChanges.filter((c) => c.type === "cancelled_forecast").reduce((sum, c) => sum + c.quantity, 0),
         shippedDemo: allChanges.filter((c) => c.type === "shipped_demo").reduce((sum, c) => sum + c.quantity, 0),
-        forecastVariance,
-      };
+    forecastVariance,
+  };
 
   return {
     uploadDateLabel,

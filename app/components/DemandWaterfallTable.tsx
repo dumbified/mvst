@@ -1053,6 +1053,31 @@ export default function DemandWaterfallTable({
               }
             }
             
+            // Detect quantity vs job list mismatch on Forecast cells
+            const isForecastColumn = isMonthColumn && ((col - MONTH_START_COL) % 3 === 1);
+            if (
+              isForecastColumn &&
+              platformForRow &&
+              !isTotals &&
+              isInValidMonth &&
+              monthIndex >= 0 &&
+              periodIndex >= 0
+            ) {
+              const monthKey = months[monthIndex].key;
+              const period = effectivePeriods[periodIndex];
+              const periodForecast = forecastSummaryList.find(
+                (fc) => fc.uploadDateLabel === period.uploadDateLabel
+              );
+              if (periodForecast) {
+                const quantity = Number(periodForecast.totals?.[platformForRow]?.[monthKey] ?? 0);
+                const machineIdCount = periodForecast.machineIds?.[platformForRow]?.[monthKey]?.length ?? 0;
+                if (quantity !== machineIdCount) {
+                  hasQtyMismatch = true;
+                  mismatchTitle = `Quantity ${quantity} differs from machine ID count ${machineIdCount}`;
+                }
+              }
+            }
+            
             // Determine background color
             let bgColor = "";
             if (periodIndex >= 0) {

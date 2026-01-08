@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createBackup, cleanupOldBackups } from "../../lib/storage/backup";
+import { createBackup, cleanupOldBackups, cleanupOldUploads } from "../../lib/storage/backup";
 
 /**
  * Checks if backup API key is configured
@@ -48,8 +48,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Cleanup old backups (non-blocking)
-    cleanupOldBackups().catch((error) => {
+    // Cleanup old backups and uploads (non-blocking)
+    Promise.all([
+      cleanupOldBackups(),
+      cleanupOldUploads(),
+    ]).catch((error) => {
       console.error("Cleanup failed (non-critical):", error);
     });
 

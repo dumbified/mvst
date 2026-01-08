@@ -87,10 +87,12 @@ export async function saveJsonToStorage<T>(
     // Try service role client first (bypasses RLS), fallback to anon client
     const supabaseService = getSupabaseServiceRole();
     const supabase = supabaseService || getSupabase();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    // Use Buffer for server-side instead of Blob (Blob may not work in Node.js)
+    const jsonString = JSON.stringify(data, null, 2);
+    const buffer = Buffer.from(jsonString, 'utf-8');
     const { error } = await supabase.storage
       .from(bucket)
-      .upload(path, blob, { upsert: true, contentType: "application/json" });
+      .upload(path, buffer, { upsert: true, contentType: "application/json" });
     
     if (error && !isRecoverableError(error)) {
       throw error;

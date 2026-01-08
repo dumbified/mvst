@@ -83,19 +83,17 @@ export function useDateEditor({
           : fc.uploadDateLabel === editingDateLabel;
 
       // Update forecasts: change only the targeted upload's date label,
-      // and remove any *other* record that already uses the new date label
+      // but keep other uploads even if they share the same date label
       const nextForecasts = sortPeriodsByUploadDate(
-        forecastSummaryList
-          .filter((fc) => !(!isEditingForecast(fc) && fc.uploadDateLabel === newDateLabel))
-          .map((fc) =>
-            isEditingForecast(fc)
-              ? {
-                  ...fc,
-                  uploadDateLabel: newDateLabel,
-                  months,
-                }
-              : fc,
-          ),
+        forecastSummaryList.map((fc) =>
+          isEditingForecast(fc)
+            ? {
+                ...fc,
+                uploadDateLabel: newDateLabel,
+                months,
+              }
+            : fc,
+        ),
       );
 
       const isEditingSalesOrder = (so: SalesOrderSummary) =>
@@ -104,19 +102,17 @@ export function useDateEditor({
           : so.uploadDateLabel === editingDateLabel;
 
       // Update sales orders: change only the targeted upload's date label,
-      // and remove any *other* record that already uses the new date label
+      // but keep other uploads even if they share the same date label
       const nextSales = sortPeriodsByUploadDate(
-        salesOrdersList
-          .filter((so) => !(!isEditingSalesOrder(so) && so.uploadDateLabel === newDateLabel))
-          .map((so) =>
-            isEditingSalesOrder(so)
-              ? {
-                  ...so,
-                  uploadDateLabel: newDateLabel,
-                  months,
-                }
-              : so,
-          ),
+        salesOrdersList.map((so) =>
+          isEditingSalesOrder(so)
+            ? {
+                ...so,
+                uploadDateLabel: newDateLabel,
+                months,
+              }
+            : so,
+        ),
       );
 
       setForecastSummaryList(nextForecasts);

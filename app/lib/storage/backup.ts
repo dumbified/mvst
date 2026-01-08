@@ -14,6 +14,9 @@ const STATE_PATH = "shared/waterfall-state.json";
 const BACKUP_FOLDER = "backups";
 const BACKUP_RETENTION_WEEKS = 8; // Keep backups for 8 weeks (2 months)
 
+const UPLOAD_FOLDERS = ["sales-orders", "forecasts"];
+const UPLOAD_RETENTION_WEEKS = 8; // Keep upload files for 8 weeks (2 months)
+
 /**
  * Format date for backup filename: YYYY-MM-DD_HH-MM-SS
  */
@@ -60,19 +63,13 @@ export async function createBackup(): Promise<{ success: boolean; backupPath?: s
     const supabase = supabaseService || getSupabase();
     const isUsingServiceRole = !!supabaseService;
     
-    // Log which client is being used (for debugging)
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[Backup] Using ${isUsingServiceRole ? 'service role' : 'anon'} client`);
-      console.log(`[Backup] Bucket: ${STATE_BUCKET}, Path: ${backupPath}`);
-    }
-    
-    const blob = new Blob([JSON.stringify(currentState, null, 2)], { 
-      type: "application/json" 
-    });
+    // Use Buffer for server-side instead of Blob (Blob may not work in Node.js)
+    const jsonString = JSON.stringify(currentState, null, 2);
+    const buffer = Buffer.from(jsonString, 'utf-8');
     
     const { error } = await supabase.storage
       .from(STATE_BUCKET)
-      .upload(backupPath, blob, { 
+      .upload(backupPath, buffer, { 
         upsert: false, // Don't overwrite existing backups
         contentType: "application/json" 
       });
@@ -80,7 +77,6 @@ export async function createBackup(): Promise<{ success: boolean; backupPath?: s
     if (error) {
       // If file already exists, that's okay - we use timestamp so collisions are rare
       if (error.message?.includes("already exists") || error.message?.includes("duplicate")) {
-        console.log(`[Backup] File already exists: ${backupPath}`);
         return {
           success: true,
           backupPath,
@@ -258,4 +254,130 @@ export async function cleanupOldBackups(): Promise<{ deleted: number; error?: st
   }
 }
 
+/**
+ * Restore state from a backup file
+ */
+export async function restoreFromBackup(backupFileName: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const backupPath = `${BACKUP_FOLDER}/${backupFileName}`;
+    
+    // Load backup file
+    const backupState = await loadJsonFromStorage<SharedWaterfallState>(STATE_BUCKET, backupPath);
+    
+    if (!backupState) {
+      return {
+        success: false,
+        error: `Backup file not found: ${backupFileName}`,
+      };
+    }
+
+    // Restore to main state file
+    const supabaseService = getSupabaseServiceRole();
+    const supabase = supabaseService || getSupabase();
+    
+    // Use Buffer for server-side instead of Blob
+    const jsonString = JSON.stringify(backupState, null, 2);
+    const buffer = Buffer.from(jsonString, 'utf-8');
+    
+    const { error } = await supabase.storage
+      .from(STATE_BUCKET)
+      .upload(STATE_PATH, buffer, {
+        upsert: true,
+        contentType: "application/json"
+      });
+
+    if (error) {
+      console.error(`[Backup] Restore error:`, error);
+      return {
+        success: false,
+        error: error.message || "Failed to restore backup",
+      };
+    }
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[Backup] Successfully restored from backup: ${backupFileName}`);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("[Backup] Restore failed:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Cleanup old upload files (sales orders and forecasts) from Supabase storage
+ * Files are named with timestamp prefix: TIMESTAMP-filename.csv
+ */
+export async function cleanupOldUploads(): Promise<{ deleted: number; error?: string }> {
+  try {
+    const supabaseService = getSupabaseServiceRole();
+    const supabase = supabaseService || getSupabase();
+    
+    let totalDeleted = 0;
+
+    // Process each upload folder
+    for (const folder of UPLOAD_FOLDERS) {
+      try {
+        const { data, error } = await supabase.storage
+          .from(STATE_BUCKET)
+          .list(folder, {
+            sortBy: { column: "created_at", order: "desc" },
+          });
+
+        if (error) {
+          // If folder doesn't exist yet, that's okay - skip it
+          const storageError = error as StorageError;
+          const errorStatus = storageError.statusCode || storageError.status;
+          if (error.message?.includes("not found") || errorStatus === '404' || errorStatus === 404) {
+            continue;
+          }
+          console.error(`[Backup] Failed to list files in ${folder}:`, error);
+          continue;
+        }
+
+        if (!data || data.length === 0) {
+          continue;
+        }
+
+        // Delete ALL files in the folder (no retention kept)
+        const filesToDelete = data.map((file) => `${folder}/${file.name}`);
+
+        if (filesToDelete.length === 0) {
+          continue;
+        }
+
+        // Delete old files
+        const { error: deleteError } = await supabase.storage
+          .from(STATE_BUCKET)
+          .remove(filesToDelete);
+
+        if (deleteError) {
+          console.error(`[Backup] Failed to delete old files from ${folder}:`, deleteError);
+          continue;
+        }
+
+        totalDeleted += filesToDelete.length;
+        
+        if (process.env.NODE_ENV === 'development' && filesToDelete.length > 0) {
+          console.log(`[Backup] Deleted ${filesToDelete.length} old file(s) from ${folder}`);
+        }
+      } catch (error) {
+        console.error(`[Backup] Error processing folder ${folder}:`, error);
+        // Continue with other folders even if one fails
+      }
+    }
+
+    return { deleted: totalDeleted };
+  } catch (error) {
+    console.error("[Backup] Failed to cleanup old uploads:", error);
+    return {
+      deleted: 0,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
 
