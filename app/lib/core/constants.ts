@@ -49,7 +49,6 @@ export function getPartNumberToPlatform(): Record<string, PlatformKey> {
   if (typeof window !== 'undefined') {
     try {
       // Dynamic import to avoid circular dependencies
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { getCachedSettings } = require('../../hooks/useSettings');
       const settings = getCachedSettings();
       if (settings?.partNumberToPlatform) {
@@ -71,7 +70,6 @@ export function getBomCosts(): Record<string, number> {
   if (typeof window !== 'undefined') {
     try {
       // Dynamic import to avoid circular dependencies
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { getCachedSettings } = require('../../hooks/useSettings');
       const settings = getCachedSettings();
       if (settings?.bomCosts) {

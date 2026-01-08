@@ -15,7 +15,6 @@ const BACKUP_FOLDER = "backups";
 const BACKUP_RETENTION_WEEKS = 8; // Keep backups for 8 weeks (2 months)
 
 const UPLOAD_FOLDERS = ["sales-orders", "forecasts"];
-const UPLOAD_RETENTION_WEEKS = 8; // Keep upload files for 8 weeks (2 months)
 
 /**
  * Format date for backup filename: YYYY-MM-DD_HH-MM-SS

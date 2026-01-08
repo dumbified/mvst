@@ -54,7 +54,6 @@ export default function CombinedChart({ data, visibleSeries }: CombinedChartProp
             />
             <YAxis yAxisId="left" label={{ value: "Qty", angle: -90, position: "insideLeft" }} />
             <Tooltip
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               formatter={customTooltipFormatter as any}
               labelFormatter={(label) => `Upload: ${label}`}
             />

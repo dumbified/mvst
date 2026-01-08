@@ -8,6 +8,19 @@ interface AccuracyChartProps {
 }
 
 export default function AccuracyChart({ data }: AccuracyChartProps) {
+  // Custom tooltip formatter
+  const tooltipFormatter = (
+    value: number | undefined,
+    name: string | undefined,
+    props?: { payload?: MonthlyAccuracyData }
+  ) => {
+    const numValue = value ?? 0;
+    return [
+      `${numValue}% (${props?.payload?.actualShippedQuantity ?? 0}/${props?.payload?.maxForecastQuantity ?? 0} qty)`,
+      "Forecast Accuracy"
+    ];
+  };
+
   return (
     <div className="space-y-3">
       <h2 className="text-sm font-semibold text-neutral-800">Forecast Accuracy Over Time</h2>
@@ -26,11 +39,8 @@ export default function AccuracyChart({ data }: AccuracyChartProps) {
               domain={[0, 100]}
             />
             <Tooltip
-              formatter={(value: number, name: string, props?: { payload?: MonthlyAccuracyData }) => [
-                `${value}% (${props?.payload?.actualShippedQuantity ?? 0}/${props?.payload?.maxForecastQuantity ?? 0} qty)`,
-                "Forecast Accuracy"
-              ]}
-              labelFormatter={(label) => `Forecast Month: ${label}`}
+              formatter={tooltipFormatter as any}
+              labelFormatter={(label) => `Forecast Month: ${label ?? ""}`}
             />
             <Legend />
             <Line
