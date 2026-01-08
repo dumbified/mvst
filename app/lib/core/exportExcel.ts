@@ -8,7 +8,6 @@ import {
 } from "./waterfallTable";
 
 // Use dynamic import to avoid server-side bundling issues
-// eslint-disable-next-line import/no-unresolved
 const loadExcelJS = async () => (await import("exceljs")).default;
 
 type MergeCellSetting = {

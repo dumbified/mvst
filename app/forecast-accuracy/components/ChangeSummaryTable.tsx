@@ -18,11 +18,12 @@ export default function ChangeSummaryTable({ data }: ChangeSummaryTableProps) {
               <tr className="bg-neutral-50 text-neutral-700">
                 <th className="border-b border-neutral-200 px-3 py-2 text-left">Upload Date</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Shipped SO</th>
+                <th className="border-b border-neutral-200 py-2 text-right">Shipped Demo (Open SO)</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Delayed SO</th>
                 <th className="border-b border-neutral-200 px-1 py-2 text-right">New Forecast</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">F&apos;cast → SO</th>
-                <th className="border-b border-neutral-200 py-2 text-right">F&apos;cast Variance</th>
-                <th className="border-b border-neutral-200 px-3 py-2 text-right">Total SO</th>
+                <th className="border-b border-neutral-200 py-2 text-right">F&apos;cast Var.</th>
+                <th className="border-b border-neutral-200 px-3 py-2 text-right">Total SO/Demo</th>
               </tr>
             </thead>
             <tbody>
@@ -52,6 +53,31 @@ export default function ChangeSummaryTable({ data }: ChangeSummaryTableProps) {
                       </Tooltip>
                     ) : (
                       row.shipped
+                    )}
+                  </td>
+                  <td className="px-3 py-2 border-t border-neutral-200 text-right">
+                    {row.shippedDemoJobs && row.shippedDemoJobs.length > 0 ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-help">{row.shippedDemo}</span>
+                        </TooltipTrigger>
+                        <TooltipContent 
+                          className="bg-white border border-neutral-200 text-neutral-800 shadow-lg max-w-md"
+                          arrowClassName="bg-white border-white fill-white"
+                        >
+                          <div className="max-h-60 overflow-y-auto pr-1">
+                            <div className="flex flex-wrap gap-1">
+                              {row.shippedDemoJobs.map((job, i) => (
+                                <span key={i} className="inline-block bg-neutral-100 px-2 py-0.5 rounded text-xs">
+                                  {job}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      row.shippedDemo ?? 0
                     )}
                   </td>
                   <td className="px-3 py-2 border-t border-neutral-200 text-right">

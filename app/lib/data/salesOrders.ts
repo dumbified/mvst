@@ -7,6 +7,10 @@ export type SalesOrderBucket = {
   open: number;
   // Track per-job status so we can detect shipped jobs even if they drop out next month
   jobStatus?: Record<string, "shipped" | "open" | "void" | "other">;
+  // Track per-job SO type (T_Demo or T_Sales)
+  jobSoType?: Record<string, "T_Demo" | "T_Sales" | "other">;
+  // Track per-job shipped-by date (as monthKey) for detecting shipped demos
+  jobShipByDate?: Record<string, string>; // jobNumber -> monthKey
 };
 
 export type SalesOrderSummary = {
@@ -169,6 +173,7 @@ export const parseSalesOrdersCsv = (
     ? normalizedHeaders.indexOf("job#")
     : normalizedHeaders.indexOf("jobnumber");
   const statusIndex = normalizedHeaders.indexOf("status");
+  const soTypeIndex = normalizedHeaders.indexOf("sotype");
 
   if (orderPartIndex === -1 || shipByIndex === -1 || orderQtyIndex === -1) {
     console.error("[Sales Orders] Missing required columns:", {
@@ -266,6 +271,22 @@ export const parseSalesOrdersCsv = (
             : "other";
     if (!bucket.jobStatus) bucket.jobStatus = {};
     bucket.jobStatus[jobNumber] = normalizedStatus;
+    
+    // Parse and store SO Type (T_Demo, T_Sales, or other)
+    if (soTypeIndex !== -1) {
+      const rawSoType = (cells[soTypeIndex] ?? "").trim().toUpperCase();
+      const normalizedSoType = rawSoType === "T_DEMO" 
+        ? "T_Demo" 
+        : rawSoType === "T_SALES" 
+          ? "T_Sales" 
+          : "other";
+      if (!bucket.jobSoType) bucket.jobSoType = {};
+      bucket.jobSoType[jobNumber] = normalizedSoType;
+    }
+    
+    // Store shipped-by date (as monthKey) per job for detecting shipped demos
+    if (!bucket.jobShipByDate) bucket.jobShipByDate = {};
+    bucket.jobShipByDate[jobNumber] = monthKey;
     
     // Only add job number to jobNumbers array if it's NOT shipped
     // Shipped jobs should NOT appear in comments/demand waterfall

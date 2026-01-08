@@ -43,6 +43,7 @@ export function useForecastAccuracyData(
         forecastLoadIns: scopedChanges.filter((c) => c.type === "forecast_load_in").reduce((sum, c) => sum + c.quantity, 0),
         forecastConversions: scopedChanges.filter((c) => c.type === "forecast_to_so_conversion").reduce((sum, c) => sum + c.quantity, 0),
         cancelledForecast: scopedChanges.filter((c) => c.type === "cancelled_forecast").reduce((sum, c) => sum + c.quantity, 0),
+        shippedDemo: scopedChanges.filter((c) => c.type === "shipped_demo").reduce((sum, c) => sum + c.quantity, 0),
       };
 
       // Calculate current total SO for this upload period
@@ -117,6 +118,7 @@ export function useForecastAccuracyData(
         forecastLoadIns: sums.forecastLoadIns,
         forecastConversions: sums.forecastConversions,
         cancelledForecast: sums.cancelledForecast,
+        shippedDemo: sums.shippedDemo,
         forecastVariance: filteredForecastVariance,
         currentTotalSo,
         shippedJobs: collectJobs(scopedChanges, "shipped"),
@@ -124,6 +126,7 @@ export function useForecastAccuracyData(
         forecastLoadInsJobs: collectJobs(scopedChanges, "forecast_load_in"),
         forecastConversionsJobs: collectJobs(scopedChanges, "forecast_to_so_conversion"),
         cancelledForecastJobs: collectJobs(scopedChanges, "cancelled_forecast"),
+        shippedDemoJobs: collectJobs(scopedChanges, "shipped_demo"),
         accuracy: 0, // Accuracy is now calculated separately in monthlyAccuracyData
       };
 
@@ -466,7 +469,7 @@ export function useForecastAccuracyData(
     });
 
     return summaryData;
-  }, [uploadChanges, selectedPlatform, forecastSummaryList]);
+  }, [uploadChanges, selectedPlatform, forecastSummaryList, salesOrdersList]);
 
   return {
     uploadChanges,

@@ -1,4 +1,4 @@
-import { SalesOrderSummary, SalesOrderBucket } from "./salesOrders";
+import { SalesOrderSummary, SalesOrderBucket, monthKeyFromDate } from "./salesOrders";
 import { ForecastSummary } from "./forecasts";
 import { PlatformKey } from "../core/constants";
 import { parseDateLabel } from "../utils/dateUtils";
@@ -9,7 +9,8 @@ export type ChangeType =
   | "moved_to_later_month" 
   | "forecast_load_in" 
   | "forecast_to_so_conversion"
-  | "cancelled_forecast";
+  | "cancelled_forecast"
+  | "shipped_demo";
 
 export type ChangeRecord = {
   type: ChangeType;
@@ -29,6 +30,7 @@ export type UploadChanges = {
     forecastLoadIns: number;
     forecastConversions: number;
     cancelledForecast: number;
+    shippedDemo: number;
     forecastVariance: { positive: number; negative: number; positiveJobs: string[]; negativeJobs: string[] };
   };
 };
@@ -77,10 +79,122 @@ function compareSalesOrders(
   const changes: ChangeRecord[] = [];
 
   if (!previous) {
+    // First upload - no changes to detect, return empty
     return [];
   }
 
   const currentUploadDate = parseDateLabel(current.uploadDateLabel) || new Date();
+  
+  // Detect shipped demos (only for subsequent uploads, not first upload)
+  // A demo is considered "shipped" if:
+  // 1. It's T_Demo type
+  // 2. Its shipped-by date (monthKey) is past due (compared to current upload date)
+  // 3. The shipped-by date was NOT updated to a later month in the current upload (if previous exists)
+  // 4. It was NOT already past due in the previous upload (to avoid double-counting)
+  const currentUploadMonthKey = monthKeyFromDate(new Date(currentUploadDate.getFullYear(), currentUploadDate.getMonth(), 1));
+  
+  // Build map of previous shipped-by dates per job and check which were already past due
+  const prevJobShipByDate = new Map<string, string>(); // jobNumber -> monthKey
+  const prevJobSoType = new Map<string, "T_Demo" | "T_Sales" | "other">(); // jobNumber -> SO type
+  let prevUploadMonthKey: string | null = null;
+  
+  if (previous) {
+    const prevUploadDate = parseDateLabel(previous.uploadDateLabel) || currentUploadDate;
+    prevUploadMonthKey = monthKeyFromDate(new Date(prevUploadDate.getFullYear(), prevUploadDate.getMonth(), 1));
+    
+    Object.entries(previous.totals).forEach(([, monthBuckets]) => {
+      Object.entries(monthBuckets).forEach(([, bucket]) => {
+        if (bucket.jobShipByDate) {
+          Object.entries(bucket.jobShipByDate).forEach(([jobNumber, shipByMonthKey]) => {
+            prevJobShipByDate.set(jobNumber, shipByMonthKey);
+          });
+        }
+        if (bucket.jobSoType) {
+          Object.entries(bucket.jobSoType).forEach(([jobNumber, soType]) => {
+            prevJobSoType.set(jobNumber, soType);
+          });
+        }
+      });
+    });
+  }
+
+  // Check all current T_Demo jobs
+  Object.entries(current.totals).forEach(([platform, monthBuckets]) => {
+    Object.entries(monthBuckets).forEach(([monthKey, bucket]) => {
+      if (!bucket.jobSoType || !bucket.jobShipByDate) return;
+
+      const shippedDemoJobs: string[] = [];
+      
+      Object.entries(bucket.jobSoType).forEach(([jobNumber, soType]) => {
+        if (soType !== "T_Demo") return;
+        
+        const currentShipByMonthKey = bucket.jobShipByDate?.[jobNumber];
+        if (!currentShipByMonthKey) return;
+        
+        // Check if shipped-by date is past due (monthKey is before current upload month)
+        const [shipYear, shipMonth] = currentShipByMonthKey.split("-").map(Number);
+        const [uploadYear, uploadMonth] = currentUploadMonthKey.split("-").map(Number);
+        const shipDate = new Date(shipYear, shipMonth - 1, 1);
+        const uploadDate = new Date(uploadYear, uploadMonth - 1, 1);
+        
+        const isPastDue = shipDate < uploadDate;
+        
+        if (!isPastDue) return; // Not past due, skip
+        
+        // Check if shipped-by date was updated to a later month in current upload
+        const prevShipByMonthKey = prevJobShipByDate.get(jobNumber);
+        let wasDateUpdatedToLater = false;
+        
+        if (prevShipByMonthKey) {
+          const [prevShipYear, prevShipMonth] = prevShipByMonthKey.split("-").map(Number);
+          const prevShipDate = new Date(prevShipYear, prevShipMonth - 1, 1);
+          
+          // If current date is later than previous date, it was updated to later
+          wasDateUpdatedToLater = shipDate > prevShipDate;
+        }
+        
+        // Check if it was already past due in previous upload (to avoid double-counting)
+        let wasAlreadyPastDue = false;
+        
+        if (prevShipByMonthKey && prevUploadMonthKey && prevJobSoType.get(jobNumber) === "T_Demo") {
+          // Check if it was past due in previous upload
+          const [prevShipYear, prevShipMonth] = prevShipByMonthKey.split("-").map(Number);
+          const [prevUploadYear, prevUploadMonth] = prevUploadMonthKey.split("-").map(Number);
+          const prevShipDate = new Date(prevShipYear, prevShipMonth - 1, 1);
+          const prevUploadDate = new Date(prevUploadYear, prevUploadMonth - 1, 1);
+          
+          wasAlreadyPastDue = prevShipDate < prevUploadDate;
+        }
+        
+        // Count as shipped demo if:
+        // - It's past due now
+        // - AND the date was NOT updated to later (if updated to later, it's no longer past due)
+        // - AND it was NOT already past due in previous upload (to avoid double-counting)
+        if (!wasDateUpdatedToLater && !wasAlreadyPastDue) {
+          shippedDemoJobs.push(jobNumber);
+        }
+      });
+
+      if (shippedDemoJobs.length > 0) {
+        // 1 job = 1 quantity
+        shippedDemoJobs.forEach((jobNumber) => {
+          const shipByMonthKey = bucket.jobShipByDate?.[jobNumber] || monthKey;
+          changes.push({
+            type: "shipped_demo",
+            platform: platform as PlatformKey,
+            monthKey: shipByMonthKey, // Use the shipped-by date monthKey
+            quantity: 1,
+            jobNumbers: [jobNumber],
+            uploadDateLabel: current.uploadDateLabel,
+          });
+        });
+      }
+    });
+  });
+
+  if (!previous) {
+    return changes; // Return early if no previous upload (only shipped demos can be detected)
+  }
 
   // Build maps of previous and current jobs by platform/month
   // Include ALL jobs from jobStatus (not just jobNumbers) to track shipped jobs that disappeared
@@ -136,7 +250,6 @@ function compareSalesOrders(
   prevJobsByPlatformMonth.forEach((prevJobs, key) => {
     const [platform, monthKey] = key.split(":");
     const currentJobs = currentJobsByPlatformMonth.get(key) ?? new Set<string>();
-    const prevBucket = prevBucketsByPlatformMonth.get(key);
     
     const disappearedJobs: string[] = [];
     prevJobs.forEach((jobNumber) => {
@@ -263,6 +376,8 @@ function compareSalesOrders(
     });
   });
 
+
+
   // Find newly appeared jobs (new orders or moved from forecast)
   currentJobsByPlatformMonth.forEach((currentJobs, key) => {
     const [platform, monthKey] = key.split(":");
@@ -332,6 +447,7 @@ function compareForecasts(
   previous: ForecastSummary | null,
   current: ForecastSummary,
   currentSo: SalesOrderSummary | null,
+  previousSo: SalesOrderSummary | null,
 ): ChangeRecord[] {
   const changes: ChangeRecord[] = [];
 
@@ -348,7 +464,22 @@ function compareForecasts(
     });
   }
 
+  // Build set of jobs that were already in previous SO (already converted)
+  // This prevents double-counting conversions that happened in a previous upload
+  const previousSoJobs = new Set<string>();
+  if (previousSo) {
+    Object.entries(previousSo.totals).forEach(([, monthBuckets]) => {
+      Object.entries(monthBuckets).forEach(([, bucket]) => {
+        bucket.jobNumbers.forEach((job) => previousSoJobs.add(job));
+      });
+    });
+  }
+
   // Check for forecast-to-SO conversions and collect converted machine IDs
+  // A conversion is counted only when:
+  // 1. Job was in previous forecast
+  // 2. Job is now in current SO
+  // 3. Job was NOT already in previous SO (to avoid double-counting)
   const convertedMachineIds = new Set<string>();
   Object.entries(previous.totals).forEach(([platform, monthBuckets]) => {
     Object.entries(monthBuckets).forEach(([monthKey, prevQty]) => {
@@ -359,7 +490,10 @@ function compareForecasts(
 
       const convertedJobs: string[] = [];
       prevMachineIds.forEach((jobId) => {
-        if (currentSoJobs.has(jobId)) {
+        // Only count as NEW conversion if:
+        // - It's in current SO (converted)
+        // - It was NOT already in previous SO (not already converted before)
+        if (currentSoJobs.has(jobId) && !previousSoJobs.has(jobId)) {
           convertedJobs.push(jobId);
           convertedMachineIds.add(jobId);
         }
@@ -591,9 +725,12 @@ function calculateUploadChanges(
   const currentForecast = currentForecastIndex >= 0 ? sortedForecasts[currentForecastIndex] : null;
   const previousForecast = currentForecastIndex > 0 ? sortedForecasts[currentForecastIndex - 1] : null;
 
+  // Check if this is the first upload (no previous uploads)
+  const isFirstUpload = !previousSo && !previousForecast;
+
   const soChanges = currentSo ? compareSalesOrders(previousSo, currentSo) : [];
   const forecastChanges = currentForecast
-    ? compareForecasts(previousForecast, currentForecast, currentSo)
+    ? compareForecasts(previousForecast, currentForecast, currentSo, previousSo)
     : [];
 
   const allChanges = [...soChanges, ...forecastChanges];
@@ -603,14 +740,26 @@ function calculateUploadChanges(
     ? calculateForecastVariance(previousForecast, currentForecast)
     : { positive: 0, negative: 0, positiveJobs: [], negativeJobs: [] };
 
-  const summary = {
-    shipped: allChanges.filter((c) => c.type === "shipped").reduce((sum, c) => sum + c.quantity, 0),
-    movedToLater: allChanges.filter((c) => c.type === "moved_to_later_month").reduce((sum, c) => sum + c.quantity, 0),
-    forecastLoadIns: allChanges.filter((c) => c.type === "forecast_load_in").reduce((sum, c) => sum + c.quantity, 0),
-    forecastConversions: allChanges.filter((c) => c.type === "forecast_to_so_conversion").reduce((sum, c) => sum + c.quantity, 0),
-    cancelledForecast: allChanges.filter((c) => c.type === "cancelled_forecast").reduce((sum, c) => sum + c.quantity, 0),
-    forecastVariance,
-  };
+  // For first upload, set all values to zero as baseline
+  const summary = isFirstUpload
+    ? {
+        shipped: 0,
+        movedToLater: 0,
+        forecastLoadIns: 0,
+        forecastConversions: 0,
+        cancelledForecast: 0,
+        shippedDemo: 0,
+        forecastVariance: { positive: 0, negative: 0, positiveJobs: [], negativeJobs: [] },
+      }
+    : {
+        shipped: allChanges.filter((c) => c.type === "shipped").reduce((sum, c) => sum + c.quantity, 0),
+        movedToLater: allChanges.filter((c) => c.type === "moved_to_later_month").reduce((sum, c) => sum + c.quantity, 0),
+        forecastLoadIns: allChanges.filter((c) => c.type === "forecast_load_in").reduce((sum, c) => sum + c.quantity, 0),
+        forecastConversions: allChanges.filter((c) => c.type === "forecast_to_so_conversion").reduce((sum, c) => sum + c.quantity, 0),
+        cancelledForecast: allChanges.filter((c) => c.type === "cancelled_forecast").reduce((sum, c) => sum + c.quantity, 0),
+        shippedDemo: allChanges.filter((c) => c.type === "shipped_demo").reduce((sum, c) => sum + c.quantity, 0),
+        forecastVariance,
+      };
 
   return {
     uploadDateLabel,
@@ -657,6 +806,7 @@ export function calculateAllUploadChanges(
       summary.forecastLoadIns > 0 ||
       summary.forecastConversions > 0 ||
       summary.cancelledForecast > 0 ||
+      summary.shippedDemo > 0 ||
       summary.forecastVariance.positive > 0 ||
       summary.forecastVariance.negative > 0
     );

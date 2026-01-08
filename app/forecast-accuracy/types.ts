@@ -13,6 +13,7 @@ export type ChartDataPoint = {
   forecastLoadIns: number;
   forecastConversions: number;
   cancelledForecast: number;
+  shippedDemo: number;
   accuracy: number; // Forecast accuracy percentage (calculated by month)
   currentTotalSo: number; // Current total SO for active months
   forecastVariance: ForecastVariance;
@@ -22,6 +23,7 @@ export type ChartDataPoint = {
   forecastLoadInsJobs: string[];
   forecastConversionsJobs: string[];
   cancelledForecastJobs: string[];
+  shippedDemoJobs: string[];
   [key: string]: string | number | string[] | ForecastVariance; // For platform-specific data
 };
 

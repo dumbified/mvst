@@ -20,7 +20,7 @@ import {
 
 import { PlatformKey, DEFAULT_BOM_COSTS, PART_NUMBER_TO_PLATFORM } from "../lib/core/constants";
 import { saveSettings, type AppSettings } from "../lib/storage/settingsStorage";
-import { setCachedSettings, useSettings } from "../hooks/useSettings";
+import { setCachedSettings, getCachedSettings, useSettings } from "../hooks/useSettings";
 
 // Separate component for BOM cost input to prevent re-render issues
 function BomCostInput({ 
@@ -101,6 +101,7 @@ export default function SettingsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [mappingToDelete, setMappingToDelete] = useState<number | null>(null);
   const hasRefreshedOnMount = useRef(false);
+  const justSavedRef = useRef(false);
   
   // React Hook Form (used mainly for structure & submit handling)
   const form = useForm({
@@ -111,6 +112,12 @@ export default function SettingsPage() {
   const { loading, settings, refreshSettings } = useSettings();
 
   useEffect(() => {
+    // Skip syncing if we just saved (to prevent overwriting user's changes)
+    if (justSavedRef.current) {
+      justSavedRef.current = false;
+      return;
+    }
+    
     if (!loading && settings) {
       // Convert part number mappings to array format
       const mappings = Object.entries(settings.partNumberToPlatform).map(([partNumber, platform]) => ({
@@ -253,14 +260,40 @@ export default function SettingsPage() {
       if (success) {
         // Update the cache immediately so other parts of the app can use the new settings
         setCachedSettings(settings);
-        // Update local state immediately to reflect what was just saved
+        // Update local state immediately for better UX (user sees their changes right away)
         setGoogleSheetsUrl(settings.googleSheetsUrl || '');
         setGoogleSheetName(settings.googleSheetName || '');
         setPartNumberMappings(validMappings);
-        // Refresh settings from Supabase in the background to ensure consistency
-        refreshSettings().catch(() => {
-          // Ignore refresh errors - we've already updated local state and cache
-        });
+        // Mark that we just saved to prevent useEffect from overwriting
+        justSavedRef.current = true;
+        
+        // Wait a moment for Supabase to propagate the change, then refresh
+        // This ensures we get the latest data from Supabase
+        setTimeout(async () => {
+          try {
+            await refreshSettings();
+            // After refresh, allow useEffect to sync (reset the flag after a brief delay)
+            setTimeout(() => {
+              justSavedRef.current = false;
+              // Manually sync from refreshed settings to ensure we show the latest
+              const refreshedSettings = getCachedSettings();
+              if (refreshedSettings) {
+                const refreshedMappings = Object.entries(refreshedSettings.partNumberToPlatform).map(([partNumber, platform]) => ({
+                  partNumber,
+                  platform: platform as PlatformKey,
+                }));
+                setPartNumberMappings(refreshedMappings);
+                setBomCosts(refreshedSettings.bomCosts);
+                setGoogleSheetsUrl(refreshedSettings.googleSheetsUrl || '');
+                setGoogleSheetName(refreshedSettings.googleSheetName || '');
+              }
+            }, 100);
+          } catch (error) {
+            console.error("Failed to refresh settings after save:", error);
+            justSavedRef.current = false;
+          }
+        }, 500);
+        
         toast.success("Settings saved successfully");
       } else {
         toast.error("Failed to save settings. Please try again.");
