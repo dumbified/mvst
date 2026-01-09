@@ -1,10 +1,8 @@
+//prevent supabase project pause due to inactivity
+
 import { NextResponse } from "next/server";
 import { getSupabaseServiceRole } from "../../lib/storage/supabaseClientServer";
 
-/**
- * Health check endpoint to keep Supabase project active
- * Runs a minimal connection check that doesn't affect storage limits
- */
 export async function GET() {
   try {
     const supabase = getSupabaseServiceRole();

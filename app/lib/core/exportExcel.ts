@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import type Handsontable from "handsontable";
 import {
   SUMMARY_COLUMNS,

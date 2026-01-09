@@ -1,37 +1,22 @@
-## MVS-T Demand Waterfall
+## MVS‑T Internal Analytics Dashboard
 
-A web application built to visualize the demand waterfall with sales order and forecast data for MVS-T OF department. Track order changes, forecast accuracy, and analyze demand patterns over time.
+An internal analytics dashboard for ViTrox MVS‑T, used to track and measure the **actual shipment of machines** against the **forecasted quantity**.
 
 ### Tech Stack
 
 - **Next.js** (framework)
-- **Supabase** (database)
-- **Handsontable** (tables library)
-- **Recharts** (charting library)
+- **Supabase** (database & storage)
+- **Handsontable** (interactive grid)
+- **Recharts** (charts)
 
-## Features
+---
 
-#### 1. Demand Waterfall View
+### 1. Demand Waterfall
 
-#### 2. Forecast Accuracy Dashboard
+The Demand Waterfall is the main view of the system. It shows Sales Orders vs Forecast by month and platform, using the latest data pulled from Epicor and the job scheduling file.
 
-A dedicated page for analyzing forecast performance and order changes over time.
+### 2. Forecast Accuracy
 
-1. **Changes Tracking**
-   - **Shipped**: shipped machine
-   - **Delayed**: orders moved to later months
-   - **New Forecast**: new forecast load ins
-   - **Forecast → SO**: forecast conversions to sales orders
+The Forecast Accuracy page is a summary dashboard built on top of the Demand Waterfall data
 
-2. **Forecast Accuracy Metrics**
-   - Calculate forecast accuracy percentage: `(Forecast Conversions) / (Forecast Conversions + Forecast Load Ins) × 100`
-
-
-## Usage
-1. Upload the SO & Forecast files by clicking the upload button
-2. The files must be .csv file
-3. In editing mode:
-   - **Left click** on a date to change the forecast load-in date
-   - **Right click** to delete that period's records
-4. Use checkboxes to filter by platforms
-5. Click the refresh button if you don't see latest changes
+[Usage](https://docs.google.com/document/d/1nITs2PZCL248ocoqj8piRTizQ4mRBRXdAu3BzSAz-94/edit?usp=sharing)
