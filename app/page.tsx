@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import DemandWaterfallTable from "./components/DemandWaterfallTable";
 import UploadControls from "./components/UploadControls";
 import DatePickerDialog from "./components/DatePickerDialog";
@@ -8,20 +8,22 @@ import { useMonthFilter } from "./hooks/useMonthFilter";
 import { useWaterfallState } from "./hooks/useWaterfallState";
 import { useWaterfallUploads } from "./hooks/useWaterfallUploads";
 import { useDateEditor } from "./hooks/useDateEditor";
-import { useClickOutside } from "./hooks/useClickOutside";
 import { useSettings } from "./hooks/useSettings";
 import { SalesOrderSummary } from "./lib/data/salesOrders";
 import { ForecastSummary } from "./lib/data/forecasts";
 import { loadSharedWaterfallState, saveSharedWaterfallState } from "./lib/storage/stateStorage";
 import { sortPeriodsByUploadDate } from "./lib/utils/dateUtils";
-import { DEFAULT_BOM_COSTS } from "./lib/core/constants";
+import { DEFAULT_BOM_COSTS, MONTH_ABBREVIATIONS } from "./lib/core/constants";
 import { setLocalStorageTimestamp } from "./lib/storage/localStorageUtils";
 import Link from "next/link";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 export default function Home() {
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [mode, setMode] = useState<"normal" | "edit" | "delete">("normal");
-  const filterMenuRef = useRef<HTMLDivElement>(null);
   
   // Cycle through modes: normal -> edit -> delete -> normal
   const handleToggleMode = useCallback(() => {
@@ -57,7 +59,13 @@ export default function Home() {
     toMonth,
     setFromMonth,
     setToMonth,
+    fromYear,
+    toYear,
+    setFromYear,
+    setToYear,
     availableMonths,
+    availableYears,
+    monthsByYear,
     filteredSalesOrdersList,
     filteredForecastSummaryList,
     hasActiveMonthFilter,
@@ -90,8 +98,6 @@ export default function Home() {
     setForecastSummaryList,
   });
 
-  // Handle click outside for filter menu
-  useClickOutside(filterMenuRef, () => setShowFilterMenu(false), showFilterMenu);
 
   const handleDeleteByDate = useCallback(
     async (idOrDateLabel: number | string) => {
@@ -231,65 +237,112 @@ export default function Home() {
       </header>
       <section className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex items-center gap-2" ref={filterMenuRef}>
-            <button
-              type="button"
-              onClick={() => setShowFilterMenu((prev) => !prev)}
-              className="inline-flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 bg-white hover:bg-neutral-50 font-mono"
-            >
-              Filter by Month
-            </button>
-            {showFilterMenu ? (
-              <div className="absolute left-0 top-full mt-2 w-64 rounded-lg border border-neutral-200 bg-white p-3 shadow-lg z-[5000]">
-                <div className="flex flex-col gap-3 text-xs text-neutral-700">
-                  <label className="flex flex-col gap-1">
-                    <span>From</span>
-                    <select
-                      value={fromMonth}
-                      onChange={(e) => setFromMonth(e.target.value)}
-                      className="rounded border border-neutral-300 px-2 py-1 text-xs bg-white"
-                    >
-                      <option value="">All months</option>
-                      {availableMonths.map((month) => (
-                        <option key={month.key} value={month.key}>
-                          {month.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span>To</span>
-                    <select
-                      value={toMonth}
-                      onChange={(e) => setToMonth(e.target.value)}
-                      className="rounded border border-neutral-300 px-2 py-1 text-xs bg-white"
-                    >
-                      <option value="">All months</option>
-                      {availableMonths.map((month) => (
-                        <option key={month.key} value={month.key}>
-                          {month.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-neutral-500">
-                      {hasActiveMonthFilter
-                        ? `Showing ${filteredPeriodCount} period${filteredPeriodCount === 1 ? "" : "s"}`
-                        : `Showing all ${totalPeriodCount} period${totalPeriodCount === 1 ? "" : "s"}`}
-                    </span>
-                    <button
-                      type="button"
-                      className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
-                      onClick={clearFilters}
-                    >
-                      Clear
-                    </button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 bg-white hover:bg-neutral-50 font-mono"
+              >
+                Filter by Month/Year
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 z-[5000]" align="start">
+              <div className="flex flex-col gap-3 text-xs text-neutral-700">
+                <div className="flex flex-col gap-2">
+                  <span className="font-medium">From</span>
+                  <div className="flex gap-2">
+                    <label className="flex flex-col gap-1 flex-1">
+                      <span className="text-[11px] text-neutral-500">Year</span>
+                      <select
+                        value={fromYear}
+                        onChange={(e) => setFromYear(e.target.value)}
+                        className="rounded border border-neutral-300 px-2 py-1 text-xs bg-white"
+                      >
+                        <option value="">All years</option>
+                        {availableYears.map((year) => (
+                          <option key={year} value={year}>
+                            {year}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 flex-1">
+                      <span className="text-[11px] text-neutral-500">Month</span>
+                      <select
+                        value={fromMonth}
+                        onChange={(e) => setFromMonth(e.target.value)}
+                        disabled={!fromYear}
+                        className="rounded border border-neutral-300 px-2 py-1 text-xs bg-white disabled:bg-neutral-100 disabled:text-neutral-400"
+                      >
+                        <option value="">All months</option>
+                        {fromYear && monthsByYear[Number(fromYear)]?.map((month) => {
+                          const [, monthNum] = month.key.split("-").map(Number);
+                          return (
+                            <option key={month.key} value={monthNum}>
+                              {MONTH_ABBREVIATIONS[monthNum - 1]}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
                   </div>
                 </div>
+                <div className="flex flex-col gap-2">
+                  <span className="font-medium">To</span>
+                  <div className="flex gap-2">
+                    <label className="flex flex-col gap-1 flex-1">
+                      <span className="text-[11px] text-neutral-500">Year</span>
+                      <select
+                        value={toYear}
+                        onChange={(e) => setToYear(e.target.value)}
+                        className="rounded border border-neutral-300 px-2 py-1 text-xs bg-white"
+                      >
+                        <option value="">All years</option>
+                        {availableYears.map((year) => (
+                          <option key={year} value={year}>
+                            {year}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 flex-1">
+                      <span className="text-[11px] text-neutral-500">Month</span>
+                      <select
+                        value={toMonth}
+                        onChange={(e) => setToMonth(e.target.value)}
+                        disabled={!toYear}
+                        className="rounded border border-neutral-300 px-2 py-1 text-xs bg-white disabled:bg-neutral-100 disabled:text-neutral-400"
+                      >
+                        <option value="">All months</option>
+                        {toYear && monthsByYear[Number(toYear)]?.map((month) => {
+                          const [, monthNum] = month.key.split("-").map(Number);
+                          return (
+                            <option key={month.key} value={monthNum}>
+                              {MONTH_ABBREVIATIONS[monthNum - 1]}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-1 border-t border-neutral-200">
+                  <span className="text-[11px] text-neutral-500">
+                    {hasActiveMonthFilter
+                      ? `Showing ${filteredPeriodCount} period${filteredPeriodCount === 1 ? "" : "s"}`
+                      : `Showing all ${totalPeriodCount} period${totalPeriodCount === 1 ? "" : "s"}`}
+                  </span>
+                  <button
+                    type="button"
+                    className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
+                    onClick={clearFilters}
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
-            ) : null}
-          </div>
+            </PopoverContent>
+          </Popover>
           <div className="ml-auto flex items-center gap-2 flex-wrap">
             <UploadControls
               onSalesOrdersUpload={handleSalesOrdersUpload}

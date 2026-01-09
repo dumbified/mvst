@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChartType, VisibleSeries, MonthOption } from "../types";
+import { MONTH_ABBREVIATIONS } from "../../lib/core/constants";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,11 +27,17 @@ interface ForecastAccuracyControlsProps {
   onChartTypeChange: (type: ChartType) => void;
   visibleSeries: VisibleSeries;
   onVisibleSeriesChange: (series: VisibleSeries) => void;
-  startMonth: string | "all";
-  onStartMonthChange: (month: string | "all") => void;
-  endMonth: string | "all";
-  onEndMonthChange: (month: string | "all") => void;
+  startYear: string;
+  startMonth: string;
+  onStartYearChange: (year: string) => void;
+  onStartMonthChange: (month: string) => void;
+  endYear: string;
+  endMonth: string;
+  onEndYearChange: (year: string) => void;
+  onEndMonthChange: (month: string) => void;
   allMonths: MonthOption[];
+  monthsByYear: Record<number, MonthOption[]>;
+  availableYears: number[];
 }
 
 export default function ForecastAccuracyControls({
@@ -41,11 +48,17 @@ export default function ForecastAccuracyControls({
   onChartTypeChange,
   visibleSeries,
   onVisibleSeriesChange,
+  startYear,
   startMonth,
+  onStartYearChange,
   onStartMonthChange,
+  endYear,
   endMonth,
+  onEndYearChange,
   onEndMonthChange,
   allMonths,
+  monthsByYear,
+  availableYears,
 }: ForecastAccuracyControlsProps) {
   const [showSeriesMenu, setShowSeriesMenu] = useState(false);
 
@@ -87,35 +100,71 @@ export default function ForecastAccuracyControls({
       <div className="h-full w-px bg-neutral-200 mx-1 self-stretch" />
 
       <div className="flex flex-col gap-1">
-        <Label className="text-xs font-medium text-neutral-700">Month Range</Label>
+        <Label className="text-xs font-medium text-neutral-700">Filter Period</Label>
         <div className="flex items-center gap-2">
-          <Select value={startMonth} onValueChange={onStartMonthChange}>
-            <SelectTrigger className="text-xs min-w-[140px] h-8">
-              <SelectValue placeholder="Start month" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Start: All</SelectItem>
-              {allMonths.map((m) => (
-                <SelectItem key={`start-${m.key}`} value={m.key}>
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-1">
+            <Select value={startYear} onValueChange={onStartYearChange}>
+              <SelectTrigger className="text-xs min-w-[80px] h-8">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All years</SelectItem>
+                {availableYears.map((year) => (
+                  <SelectItem key={`start-year-${year}`} value={String(year)}>
+                    {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={startMonth} onValueChange={onStartMonthChange} disabled={!startYear || startYear === "all"}>
+              <SelectTrigger className="text-xs min-w-[90px] h-8" disabled={!startYear || startYear === "all"}>
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All months</SelectItem>
+                {startYear && monthsByYear[Number(startYear)]?.map((m) => {
+                  const [, monthNum] = m.key.split("-").map(Number);
+                  return (
+                    <SelectItem key={`start-${m.key}`} value={String(monthNum)}>
+                      {MONTH_ABBREVIATIONS[monthNum - 1]}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
           <span className="text-neutral-500 text-xs">to</span>
-          <Select value={endMonth} onValueChange={onEndMonthChange}>
-            <SelectTrigger className="text-xs min-w-[140px] h-8">
-              <SelectValue placeholder="End month" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">End: All</SelectItem>
-              {allMonths.map((m) => (
-                <SelectItem key={`end-${m.key}`} value={m.key}>
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-1">
+            <Select value={endYear} onValueChange={onEndYearChange}>
+              <SelectTrigger className="text-xs min-w-[80px] h-8">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All years</SelectItem>
+                {availableYears.map((year) => (
+                  <SelectItem key={`end-year-${year}`} value={String(year)}>
+                    {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={endMonth} onValueChange={onEndMonthChange} disabled={!endYear || endYear === "all"}>
+              <SelectTrigger className="text-xs min-w-[90px] h-8" disabled={!endYear || endYear === "all"}>
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All months</SelectItem>
+                {endYear && monthsByYear[Number(endYear)]?.map((m) => {
+                  const [, monthNum] = m.key.split("-").map(Number);
+                  return (
+                    <SelectItem key={`end-${m.key}`} value={String(monthNum)}>
+                      {MONTH_ABBREVIATIONS[monthNum - 1]}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 

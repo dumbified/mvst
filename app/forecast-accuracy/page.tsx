@@ -29,8 +29,10 @@ export default function ForecastAccuracyPage() {
     movedToLater: true,
     currentTotalSo: true,
   });
-  const [startMonth, setStartMonth] = useState<string | "all">("all");
-  const [endMonth, setEndMonth] = useState<string | "all">("all");
+  const [startYear, setStartYear] = useState<string>("all");
+  const [startMonth, setStartMonth] = useState<string>("all");
+  const [endYear, setEndYear] = useState<string>("all");
+  const [endMonth, setEndMonth] = useState<string>("all");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -69,8 +71,8 @@ export default function ForecastAccuracyPage() {
     }
   }, [allPlatforms, selectedPlatform]);
 
-  // Collect available months from uploads
-  const allMonths = useMemo(() => {
+  // Collect available months from uploads and group by year
+  const { allMonths, monthsByYear, availableYears } = useMemo(() => {
     const monthSet = new Set<string>();
     const collect = (list: { uploadDateLabel: string }[]) => {
       list.forEach((item) => {
@@ -82,21 +84,89 @@ export default function ForecastAccuracyPage() {
     };
     collect(salesOrdersList);
     collect(forecastSummaryList);
-    return Array.from(monthSet)
+    
+    const months = Array.from(monthSet)
       .sort()
       .map((key) => ({
         key,
         label: formatMonthLabel(key),
         time: monthKeyToTimestamp(key),
       }));
+
+    // Group months by year
+    const grouped: Record<number, typeof months> = {};
+    months.forEach((month) => {
+      const [year] = month.key.split("-").map(Number);
+      if (!grouped[year]) {
+        grouped[year] = [];
+      }
+      grouped[year].push(month);
+    });
+
+    // Get available years
+    const years = Object.keys(grouped)
+      .map(Number)
+      .sort((a, b) => a - b);
+
+    return {
+      allMonths: months,
+      monthsByYear: grouped,
+      availableYears: years,
+    };
   }, [salesOrdersList, forecastSummaryList]);
+
+  // Handle year changes - clear month if year changes
+  const handleStartYearChange = (year: string) => {
+    setStartYear(year);
+    if (year !== "all" && startMonth !== "all") {
+      // Check if the selected month exists in the new year
+      const monthsInYear = monthsByYear[Number(year)] || [];
+      const monthExists = monthsInYear.some((m) => {
+        const [, monthNum] = m.key.split("-").map(Number);
+        return monthNum === Number(startMonth);
+      });
+      if (!monthExists) {
+        setStartMonth("all");
+      }
+    } else if (year === "all") {
+      setStartMonth("all");
+    }
+  };
+
+  const handleEndYearChange = (year: string) => {
+    setEndYear(year);
+    if (year !== "all" && endMonth !== "all") {
+      // Check if the selected month exists in the new year
+      const monthsInYear = monthsByYear[Number(year)] || [];
+      const monthExists = monthsInYear.some((m) => {
+        const [, monthNum] = m.key.split("-").map(Number);
+        return monthNum === Number(endMonth);
+      });
+      if (!monthExists) {
+        setEndMonth("all");
+      }
+    } else if (year === "all") {
+      setEndMonth("all");
+    }
+  };
+
+  // Build month keys from year and month selections
+  const startMonthKey = useMemo(() => {
+    if (startYear === "all" || startMonth === "all") return "all";
+    return `${startYear}-${String(Number(startMonth)).padStart(2, "0")}`;
+  }, [startYear, startMonth]);
+
+  const endMonthKey = useMemo(() => {
+    if (endYear === "all" || endMonth === "all") return "all";
+    return `${endYear}-${String(Number(endMonth)).padStart(2, "0")}`;
+  }, [endYear, endMonth]);
 
   const { uploadChanges, chartData, monthlyAccuracyData, monthlySummaryData } = useForecastAccuracyData(
     salesOrdersList,
     forecastSummaryList,
     selectedPlatform,
-    startMonth,
-    endMonth,
+    startMonthKey,
+    endMonthKey,
   );
 
   if (loading) {
@@ -125,11 +195,17 @@ export default function ForecastAccuracyPage() {
               onChartTypeChange={setChartType}
               visibleSeries={visibleSeries}
               onVisibleSeriesChange={setVisibleSeries}
+              startYear={startYear}
               startMonth={startMonth}
+              onStartYearChange={handleStartYearChange}
               onStartMonthChange={setStartMonth}
+              endYear={endYear}
               endMonth={endMonth}
+              onEndYearChange={handleEndYearChange}
               onEndMonthChange={setEndMonth}
               allMonths={allMonths}
+              monthsByYear={monthsByYear}
+              availableYears={availableYears}
             />
 
             <ForecastAccuracyTabs

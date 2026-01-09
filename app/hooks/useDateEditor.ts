@@ -86,14 +86,14 @@ export function useDateEditor({
       // but keep other uploads even if they share the same date label
       const nextForecasts = sortPeriodsByUploadDate(
         forecastSummaryList.map((fc) =>
-          isEditingForecast(fc)
-            ? {
-                ...fc,
-                uploadDateLabel: newDateLabel,
-                months,
-              }
-            : fc,
-        ),
+            isEditingForecast(fc)
+              ? {
+                  ...fc,
+                  uploadDateLabel: newDateLabel,
+                  months,
+                }
+              : fc,
+          ),
       );
 
       const isEditingSalesOrder = (so: SalesOrderSummary) =>
@@ -105,14 +105,14 @@ export function useDateEditor({
       // but keep other uploads even if they share the same date label
       const nextSales = sortPeriodsByUploadDate(
         salesOrdersList.map((so) =>
-          isEditingSalesOrder(so)
-            ? {
-                ...so,
-                uploadDateLabel: newDateLabel,
-                months,
-              }
-            : so,
-        ),
+            isEditingSalesOrder(so)
+              ? {
+                  ...so,
+                  uploadDateLabel: newDateLabel,
+                  months,
+                }
+              : so,
+          ),
       );
 
       setForecastSummaryList(nextForecasts);

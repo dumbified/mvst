@@ -1,6 +1,6 @@
 "use client";
 
-import { ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { ChartDataPoint } from "../types";
 import { VisibleSeries } from "../types";
 
@@ -44,7 +44,7 @@ export default function CombinedChart({ data, visibleSeries }: CombinedChartProp
       <h2 className="text-sm font-semibold text-neutral-800">Forecast Changes &amp; Sales Order Activity</h2>
       <div className="border border-neutral-200 rounded-lg p-3 bg-white">
         <ResponsiveContainer width="100%" height={420}>
-          <ComposedChart data={combinedData}>
+          <LineChart data={combinedData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis
               dataKey="uploadDateShort"
@@ -59,21 +59,21 @@ export default function CombinedChart({ data, visibleSeries }: CombinedChartProp
             />
             <Legend />
             {visibleSeries.forecastLoadIns && (
-              <Bar yAxisId="left" dataKey="forecastLoadIns" fill="#8884d8" name="New Forecast" />
+              <Line yAxisId="left" type="monotone" dataKey="forecastLoadIns" stroke="#8884d8" strokeWidth={3} name="New Forecast" />
             )}
             {visibleSeries.forecastConversions && (
-              <Bar yAxisId="left" dataKey="forecastConversions" fill="#82ca9d" name="Fcast → SO" />
+              <Line yAxisId="left" type="monotone" dataKey="forecastConversions" stroke="#82ca9d" strokeWidth={3} name="Fcast → SO" />
             )}
             {visibleSeries.shipped && (
-              <Bar yAxisId="left" dataKey="shippedTotal" fill="#ffc658" name="Shipped" />
+              <Line yAxisId="left" type="monotone" dataKey="shippedTotal" stroke="#ffc658" strokeWidth={3} name="Shipped" />
             )}
             {visibleSeries.movedToLater && (
-              <Bar yAxisId="left" dataKey="movedToLater" fill="#e63946" name="Delayed" />
+              <Line yAxisId="left" type="monotone" dataKey="movedToLater" stroke="#e63946" strokeWidth={3} name="Delayed" />
             )}
             {visibleSeries.currentTotalSo && (
-              <Bar yAxisId="left" dataKey="currentTotalSo" fill="#9ca3af" name="Total SO/Demo" />
+              <Line yAxisId="left" type="monotone" dataKey="currentTotalSo" stroke="#9ca3af" strokeWidth={3} name="Total SO/Demo" />
             )}
-          </ComposedChart>
+          </LineChart>
         </ResponsiveContainer>
       </div>
     </div>

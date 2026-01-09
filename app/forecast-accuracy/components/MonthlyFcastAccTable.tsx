@@ -99,6 +99,7 @@ export default function MonthlyFcastAccTable({ salesOrdersList, forecastSummaryL
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Max Forecast Qty</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Actual Shipped Qty</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-right">Accuracy %</th>
+                <th className="border-b border-neutral-200 pl-1 pr-3 py-2 text-right">6-Month Rolling Accuracy %</th>
               </tr>
             </thead>
             <tbody>
@@ -144,7 +145,28 @@ export default function MonthlyFcastAccTable({ salesOrdersList, forecastSummaryL
                           arrowClassName="bg-white border-white fill-white"
                         >
                           <div className="text-xs">
-                            Accuracy: {row.actualShippedQuantity} / {row.maxForecastQuantity} = {row.forecastAccuracy}%
+                            {row.actualShippedQuantity} / {row.maxForecastQuantity} = {row.forecastAccuracy}%
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      "N/A"
+                    )}
+                  </td>
+                  <td className="pl-1 pr-3 py-2 border-t border-neutral-200 text-right font-semibold">
+                    {row.hasShippedData && row.sixMonthRollingAccuracy !== undefined ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-help">{row.sixMonthRollingAccuracy}%</span>
+                        </TooltipTrigger>
+                        <TooltipContent 
+                          className="bg-white border border-neutral-200 text-neutral-800 shadow-lg"
+                          arrowClassName="bg-white border-white fill-white"
+                        >
+                          <div className="text-xs">
+                            {row.actualShippedQuantity} / {row.maxForecastInSixMonths} = {row.sixMonthRollingAccuracy}%
+                            <br />
+                            <span className="text-neutral-500 text-[10px]">(Current month shipped / Max forecast in 6 months)</span>
                           </div>
                         </TooltipContent>
                       </Tooltip>

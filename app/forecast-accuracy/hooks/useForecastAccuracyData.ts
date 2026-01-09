@@ -194,6 +194,21 @@ export function useForecastAccuracyData(
       ? salesOrdersList[salesOrdersList.length - 1]
       : null;
 
+    // Helper function to get the 6 months before (including current month)
+    const getSixMonthsBefore = (monthKey: string): string[] => {
+      const [year, month] = monthKey.split("-").map(Number);
+      const months: string[] = [];
+      const current = new Date(year, month - 1, 1);
+      
+      // Include current month and 5 months before (total 6 months)
+      for (let i = 0; i < 6; i++) {
+        months.push(monthKeyFromDate(current));
+        current.setMonth(current.getMonth() - 1);
+      }
+      
+      return months;
+    };
+
     const monthlyData: MonthlyAccuracyData[] = [];
 
     // For each forecast month bucket, calculate accuracy (continuous across range)
@@ -267,6 +282,43 @@ export function useForecastAccuracyData(
       }
       // If no shipped data, accuracy remains 0 (will be displayed as "N/A" or similar)
 
+      // Calculate 6-month rolling accuracy
+      // Formula: current month actual shipped / max forecasted quantity in the 6 months before (including current)
+      let sixMonthRollingAccuracy = 0;
+      let maxForecastInSixMonths = 0;
+      
+      if (hasShippedData) {
+        const sixMonthsKeys = getSixMonthsBefore(forecastMonthKey);
+        
+        // Find MAX forecast quantity across all forecast uploads for these 6 months
+        sixMonthsKeys.forEach((monthKey) => {
+          forecastSummaryList.forEach((forecast) => {
+            if (selectedPlatform === "overall") {
+              // Sum forecast across all platforms for this month
+              let totalForAllPlatforms = 0;
+              Object.values(forecast.totals).forEach((platformTotals) => {
+                const qty = platformTotals[monthKey] ?? 0;
+                totalForAllPlatforms += qty;
+              });
+              if (totalForAllPlatforms > maxForecastInSixMonths) {
+                maxForecastInSixMonths = totalForAllPlatforms;
+              }
+            } else {
+              const platformTotals = forecast.totals[selectedPlatform] ?? {};
+              const forecastQuantity = platformTotals[monthKey] ?? 0;
+              if (forecastQuantity > maxForecastInSixMonths) {
+                maxForecastInSixMonths = forecastQuantity;
+              }
+            }
+          });
+        });
+        
+        // Calculate: current month actual shipped / max forecast in 6 months * 100
+        if (maxForecastInSixMonths > 0) {
+          sixMonthRollingAccuracy = (actualShippedQuantity / maxForecastInSixMonths) * 100;
+        }
+      }
+
       monthlyData.push({
         forecastMonthKey,
         forecastMonthLabel: formatMonthLabel(forecastMonthKey),
@@ -275,6 +327,8 @@ export function useForecastAccuracyData(
         forecastAccuracy: Math.round(forecastAccuracy * 10) / 10,
         hasShippedData,
         shippedJobs: shippedJobs.length > 0 ? Array.from(new Set(shippedJobs)) : [],
+        sixMonthRollingAccuracy: hasShippedData ? Math.round(sixMonthRollingAccuracy * 10) / 10 : undefined,
+        maxForecastInSixMonths: hasShippedData ? maxForecastInSixMonths : undefined,
       });
     });
 
