@@ -23,7 +23,6 @@ interface MonthlyFcastAccTableProps {
 export default function MonthlyFcastAccTable({ salesOrdersList, forecastSummaryList, selectedPlatform }: MonthlyFcastAccTableProps) {
   const [selectedYear, setSelectedYear] = useState<string | "all">("all");
 
-  // Calculate accuracy data with the selected platform
   const { monthlyAccuracyData } = useForecastAccuracyData(
     salesOrdersList,
     forecastSummaryList,
@@ -32,17 +31,15 @@ export default function MonthlyFcastAccTable({ salesOrdersList, forecastSummaryL
     "all"
   );
 
-  // Extract available years from data
   const availableYears = useMemo(() => {
     const years = new Set<number>();
     monthlyAccuracyData.forEach((item) => {
       const [year] = item.forecastMonthKey.split("-").map(Number);
       years.add(year);
     });
-    return Array.from(years).sort((a, b) => b - a); // Most recent first
+    return Array.from(years).sort((a, b) => b - a);
   }, [monthlyAccuracyData]);
 
-  // Filter data by year
   const filteredData = useMemo(() => {
     if (selectedYear === "all") return monthlyAccuracyData;
     return monthlyAccuracyData.filter((item) => {
@@ -51,7 +48,6 @@ export default function MonthlyFcastAccTable({ salesOrdersList, forecastSummaryL
     });
   }, [monthlyAccuracyData, selectedYear]);
 
-  // If no platform or "All Platforms" is selected, show a helper message instead of the table
   if (!selectedPlatform || selectedPlatform === "overall") {
     return (
       <div className="text-neutral-500 italic center">
@@ -64,7 +60,6 @@ export default function MonthlyFcastAccTable({ salesOrdersList, forecastSummaryL
     );
   }
 
-  // If there is a platform but no data, hide the table
   if (monthlyAccuracyData.length === 0) {
     return null;
   }

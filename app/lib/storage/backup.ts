@@ -318,7 +318,6 @@ export async function cleanupOldUploads(): Promise<{ deleted: number; error?: st
     
     let totalDeleted = 0;
 
-    // Process each upload folder
     for (const folder of UPLOAD_FOLDERS) {
       try {
         const { data, error } = await supabase.storage
@@ -328,7 +327,6 @@ export async function cleanupOldUploads(): Promise<{ deleted: number; error?: st
           });
 
         if (error) {
-          // If folder doesn't exist yet, that's okay - skip it
           const storageError = error as StorageError;
           const errorStatus = storageError.statusCode || storageError.status;
           if (error.message?.includes("not found") || errorStatus === '404' || errorStatus === 404) {
@@ -342,14 +340,12 @@ export async function cleanupOldUploads(): Promise<{ deleted: number; error?: st
           continue;
         }
 
-        // Delete ALL files in the folder (no retention kept)
         const filesToDelete = data.map((file) => `${folder}/${file.name}`);
 
         if (filesToDelete.length === 0) {
           continue;
         }
 
-        // Delete old files
         const { error: deleteError } = await supabase.storage
           .from(STATE_BUCKET)
           .remove(filesToDelete);
@@ -366,7 +362,6 @@ export async function cleanupOldUploads(): Promise<{ deleted: number; error?: st
         }
       } catch (error) {
         console.error(`[Backup] Error processing folder ${folder}:`, error);
-        // Continue with other folders even if one fails
       }
     }
 

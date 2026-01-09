@@ -24,7 +24,6 @@ export function useForecastAccuracyData(
         .filter((c) => c.type === type && c.jobNumbers && c.jobNumbers.length > 0)
         .flatMap((c) => c.jobNumbers as string[]);
 
-    // Calculate data points per upload (without accuracy - that's now in monthlyAccuracyData)
     const data: ChartDataPoint[] = uploadChanges.map((change) => {
       const scopedChanges =
         selectedPlatform === "overall"
@@ -36,7 +35,6 @@ export function useForecastAccuracyData(
         ? `${uploadDate.getDate()}/${uploadDate.getMonth() + 1}/${uploadDate.getFullYear().toString().slice(-2)}`
         : change.uploadDateLabel;
 
-      // Calculate quantities based on scope (per upload)
       const sums = {
         shipped: scopedChanges.filter((c) => c.type === "shipped").reduce((sum, c) => sum + c.quantity, 0),
         movedToLater: scopedChanges.filter((c) => c.type === "moved_to_later_month").reduce((sum, c) => sum + c.quantity, 0),
@@ -46,7 +44,6 @@ export function useForecastAccuracyData(
         shippedDemo: scopedChanges.filter((c) => c.type === "shipped_demo").reduce((sum, c) => sum + c.quantity, 0),
       };
 
-      // Calculate current total SO for this upload period
       const salesOrderForPeriod = salesOrdersList.find(
         (so) => so.uploadDateLabel === change.uploadDateLabel
       );
@@ -55,7 +52,6 @@ export function useForecastAccuracyData(
       if (salesOrderForPeriod) {
         const activeMonthKeys = new Set(salesOrderForPeriod.months.map((m) => m.key));
         if (selectedPlatform === "overall") {
-          // Sum SO across all platforms for active months
           Object.values(salesOrderForPeriod.totals).forEach((platformTotals) => {
             Object.entries(platformTotals).forEach(([monthKey, bucket]) => {
               if (activeMonthKeys.has(monthKey)) {
@@ -73,17 +69,13 @@ export function useForecastAccuracyData(
         }
       }
 
-      // Filter forecast variance by platform
       let filteredForecastVariance = change.summary.forecastVariance;
-      // For "overall", keep variance across all platforms
       if (selectedPlatform !== "overall") {
-        // Find the current forecast for this upload to get platform info for machine IDs
         const currentForecast = forecastSummaryList.find(
           (fc) => fc.uploadDateLabel === change.uploadDateLabel
         );
 
         if (currentForecast && currentForecast.machineIds) {
-          // Build a map of machine ID -> platform
           const machineIdToPlatform = new Map<string, string>();
           Object.entries(currentForecast.machineIds).forEach(([platform, monthMachineIds]) => {
             Object.values(monthMachineIds).forEach((machineIds) => {
@@ -93,7 +85,6 @@ export function useForecastAccuracyData(
             });
           });
 
-          // Filter positive and negative jobs by platform
           const filteredPositiveJobs = change.summary.forecastVariance.positiveJobs.filter(
             (machineId) => machineIdToPlatform.get(machineId) === selectedPlatform
           );
@@ -127,13 +118,12 @@ export function useForecastAccuracyData(
         forecastConversionsJobs: collectJobs(scopedChanges, "forecast_to_so_conversion"),
         cancelledForecastJobs: collectJobs(scopedChanges, "cancelled_forecast"),
         shippedDemoJobs: collectJobs(scopedChanges, "shipped_demo"),
-        accuracy: 0, // Accuracy is now calculated separately in monthlyAccuracyData
+        accuracy: 0,
       };
 
       return point;
     });
 
-    // Filter by month range if set
     const startTime =
       startMonth === "all" ? Number.NEGATIVE_INFINITY : monthKeyToTimestamp(startMonth);
     const endTime =
@@ -148,15 +138,11 @@ export function useForecastAccuracyData(
     });
   }, [uploadChanges, selectedPlatform, startMonth, endMonth, salesOrdersList, forecastSummaryList]);
 
-  // Calculate monthly accuracy data (grouped by forecast month bucket)
-  // Formula: (actual shipped quantity in that month bucket) / (max forecast quantity in that bucket month)
   const monthlyAccuracyData = useMemo<MonthlyAccuracyData[]>(() => {
-    // Don't calculate accuracy for "All Platforms" - only per-platform accuracy is meaningful
     if (selectedPlatform === "overall") return [];
     
     if (forecastSummaryList.length === 0) return [];
 
-    // Collect all unique forecast months from all forecast uploads
     const forecastMonthKeys = new Set<string>();
     forecastSummaryList.forEach((forecast) => {
       forecast.months.forEach((month) => {
@@ -166,7 +152,6 @@ export function useForecastAccuracyData(
 
     if (forecastMonthKeys.size === 0) return [];
 
-    // Build a continuous month range from earliest to latest forecast month key
     const sortedKeys = Array.from(forecastMonthKeys).sort();
     const firstKey = sortedKeys[0];
     const lastKey = sortedKeys[sortedKeys.length - 1];
@@ -189,18 +174,15 @@ export function useForecastAccuracyData(
 
     const continuousMonthKeys = buildContinuousMonthRange(firstKey, lastKey);
 
-    // Get the most recent sales order upload for shipped data
     const mostRecentSalesOrder = salesOrdersList.length > 0 
       ? salesOrdersList[salesOrdersList.length - 1]
       : null;
 
-    // Helper function to get the 6 months before (including current month)
     const getSixMonthsBefore = (monthKey: string): string[] => {
       const [year, month] = monthKey.split("-").map(Number);
       const months: string[] = [];
       const current = new Date(year, month - 1, 1);
       
-      // Include current month and 5 months before (total 6 months)
       for (let i = 0; i < 6; i++) {
         months.push(monthKeyFromDate(current));
         current.setMonth(current.getMonth() - 1);
@@ -211,14 +193,11 @@ export function useForecastAccuracyData(
 
     const monthlyData: MonthlyAccuracyData[] = [];
 
-    // For each forecast month bucket, calculate accuracy (continuous across range)
     continuousMonthKeys.forEach((forecastMonthKey) => {
-      // Find MAX forecast quantity across all forecast uploads for this month
       let maxForecastQuantity = 0;
       
       forecastSummaryList.forEach((forecast) => {
         if (selectedPlatform === "overall") {
-          // Sum forecast across all platforms for this month
           let totalForAllPlatforms = 0;
           Object.values(forecast.totals).forEach((platformTotals) => {
             const qty = platformTotals[forecastMonthKey] ?? 0;
@@ -236,7 +215,6 @@ export function useForecastAccuracyData(
         }
       });
 
-      // Get actual shipped quantity for this month from the most recent sales order
       let actualShippedQuantity = 0;
       let hasShippedData = false;
       const shippedJobs: string[] = [];
@@ -248,7 +226,6 @@ export function useForecastAccuracyData(
             actualShippedQuantity += bucket.shipped;
             hasShippedData = true;
           }
-          // Prefer explicit shipped jobs from jobStatus
           if (bucket.jobStatus) {
             Object.entries(bucket.jobStatus).forEach(([jobNumber, status]) => {
               if (status === "shipped") {
@@ -256,13 +233,11 @@ export function useForecastAccuracyData(
               }
             });
           } else if (bucket.shipped && bucket.jobNumbers && bucket.jobNumbers.length > 0) {
-            // Fallback: if no jobStatus but we have shipped qty and job numbers, include them
             shippedJobs.push(...bucket.jobNumbers);
           }
         };
 
         if (selectedPlatform === "overall") {
-          // Sum shipped and collect shipped jobs across all platforms for this month
           Object.values(mostRecentSalesOrder.totals).forEach((platformTotals) => {
             const bucket = (platformTotals as Record<string, { shipped?: number; jobStatus?: Record<string, "shipped" | "open" | "void" | "other">; jobNumbers?: string[] }>)[forecastMonthKey];
             collectFromBucket(bucket);
@@ -274,27 +249,20 @@ export function useForecastAccuracyData(
         }
       }
 
-      // Calculate accuracy: (actual shipped / max forecast) * 100
-      // Only calculate if shipped data is available
       let forecastAccuracy = 0;
       if (hasShippedData && maxForecastQuantity > 0) {
         forecastAccuracy = (actualShippedQuantity / maxForecastQuantity) * 100;
       }
-      // If no shipped data, accuracy remains 0 (will be displayed as "N/A" or similar)
 
-      // Calculate 6-month rolling accuracy
-      // Formula: current month actual shipped / max forecasted quantity in the 6 months before (including current)
       let sixMonthRollingAccuracy = 0;
       let maxForecastInSixMonths = 0;
       
       if (hasShippedData) {
         const sixMonthsKeys = getSixMonthsBefore(forecastMonthKey);
         
-        // Find MAX forecast quantity across all forecast uploads for these 6 months
         sixMonthsKeys.forEach((monthKey) => {
           forecastSummaryList.forEach((forecast) => {
             if (selectedPlatform === "overall") {
-              // Sum forecast across all platforms for this month
               let totalForAllPlatforms = 0;
               Object.values(forecast.totals).forEach((platformTotals) => {
                 const qty = platformTotals[monthKey] ?? 0;
@@ -313,7 +281,6 @@ export function useForecastAccuracyData(
           });
         });
         
-        // Calculate: current month actual shipped / max forecast in 6 months * 100
         if (maxForecastInSixMonths > 0) {
           sixMonthRollingAccuracy = (actualShippedQuantity / maxForecastInSixMonths) * 100;
         }
@@ -332,7 +299,6 @@ export function useForecastAccuracyData(
       });
     });
 
-    // Sort by forecast month key (chronological order)
     monthlyData.sort((a, b) => {
       const [yearA, monthA] = a.forecastMonthKey.split("-").map(Number);
       const [yearB, monthB] = b.forecastMonthKey.split("-").map(Number);
@@ -343,9 +309,6 @@ export function useForecastAccuracyData(
     return monthlyData;
   }, [forecastSummaryList, salesOrdersList, selectedPlatform]);
 
-  // Calculate monthly summary data (grouped by month bucket, not upload month)
-  // Shows totals per bucket: Total Shipped (actual shipped from latest SO snapshot),
-  // Total New Forecast, Total Fcast → SO
   const monthlySummaryData = useMemo<MonthlySummaryData[]>(() => {
     if (uploadChanges.length === 0) return [];
 
@@ -356,7 +319,6 @@ export function useForecastAccuracyData(
       return d > now;
     };
 
-    // Months currently visible in the demand waterfall (union of SO + Forecast months)
     const allowedMonthKeys = new Set<string>();
     salesOrdersList.forEach((so) => {
       so.months.forEach((m) => allowedMonthKeys.add(m.key));
@@ -365,8 +327,6 @@ export function useForecastAccuracyData(
       fc.months.forEach((m) => allowedMonthKeys.add(m.key));
     });
 
-    // Map each forecast upload to its Forecast load-ins date bucket month (if available)
-    // Used only for the "Total New Forecast" column so that it follows the Forecast load-ins date.
     const loadInsMonthByUpload = new Map<string, string>();
     forecastSummaryList.forEach((fc) => {
       if (fc.forecastLoadInsDateLabel) {
@@ -377,8 +337,6 @@ export function useForecastAccuracyData(
       }
     });
 
-    // Group changes by their month bucket (change.monthKey) for forecast/new-forecast/conversions.
-    // We will override totalShipped with actual shipped from the latest SO snapshot below.
     const byBucketMonth = new Map<string, {
       totalShipped: number;
       totalNewForecast: number;
@@ -395,8 +353,6 @@ export function useForecastAccuracyData(
           : upload.changes.filter((c) => c.platform === selectedPlatform);
 
       scopedChanges.forEach((change) => {
-        // Default bucket month is the change's monthKey (forecast / shipped bucket)
-        // For "forecast_load_in" we prefer the Forecast load-ins date bucket month if available.
         let bucketMonthKey = change.monthKey;
         if (change.type === "forecast_load_in") {
           const loadInsKey = loadInsMonthByUpload.get(change.uploadDateLabel);
@@ -421,7 +377,6 @@ export function useForecastAccuracyData(
         }
 
         if (change.type === "shipped") {
-          // We'll replace totalShipped later with actual shipped snapshot; keep jobs for tooltips.
           if (change.jobNumbers && change.jobNumbers.length > 0) {
             agg.shippedJobs.push(...change.jobNumbers);
           }
@@ -439,7 +394,6 @@ export function useForecastAccuracyData(
       });
     });
 
-    // Build summary data from change map
     const summaryData: MonthlySummaryData[] = [];
     byBucketMonth.forEach((agg, bucketMonthKey) => {
       if (!allowedMonthKeys.has(bucketMonthKey)) return;
@@ -455,7 +409,6 @@ export function useForecastAccuracyData(
       });
     });
 
-    // Override Total Shipped with actual shipped from the latest SO snapshot
     if (salesOrdersList.length > 0) {
       const latestSo = [...salesOrdersList].sort(
         (a, b) => (parseDateLabel(b.uploadDateLabel)?.getTime() ?? 0) - (parseDateLabel(a.uploadDateLabel)?.getTime() ?? 0)
@@ -493,7 +446,6 @@ export function useForecastAccuracyData(
       }
     }
 
-    // Ensure past/ongoing months that exist in waterfall are present even if zero
     const now = new Date();
     allowedMonthKeys.forEach((monthKey) => {
       const [y, m] = monthKey.split("-").map(Number);
@@ -514,7 +466,6 @@ export function useForecastAccuracyData(
       }
     });
 
-    // Sort by bucket month key (chronological order)
     summaryData.sort((a, b) => {
       const [yearA, monthA] = a.uploadMonthKey.split("-").map(Number);
       const [yearB, monthB] = b.uploadMonthKey.split("-").map(Number);

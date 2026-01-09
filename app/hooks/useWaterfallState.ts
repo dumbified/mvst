@@ -17,11 +17,9 @@ export function useWaterfallState() {
   const [bomCosts, setBomCosts] = useState<Record<string, number>>(DEFAULT_BOM_COSTS);
   const [cellComments, setCellComments] = useState<CellComments>({});
 
-  // Load saved data on mount (merge remote and local, prefer most complete)
   useEffect(() => {
     let cancelled = false;
     const loadState = async () => {
-      // Load local storage first (faster, more reliable)
       let localSales: SalesOrderSummary[] = [];
       let localForecasts: ForecastSummary[] = [];
       let localBomCosts: Record<string, number> | null = null;
@@ -62,12 +60,9 @@ export function useWaterfallState() {
         // ignore storage errors
       }
 
-      // Try to load remote state
       const remote = await loadSharedWaterfallState();
       if (cancelled) return;
 
-      // Merge remote and local data, deduplicating by uploadDateLabel
-      // Prefer remote data if it exists and has a valid updatedAt timestamp
       const mergeLists = <T extends { uploadDateLabel: string }>(
         local: T[],
         remote: T[] | undefined,
@@ -79,11 +74,8 @@ export function useWaterfallState() {
         const preferRemote = remoteUpdatedAt && (!localUpdatedAt || remoteUpdatedAt > localUpdatedAt);
         
         if (preferRemote) {
-          // If remote is newer, use ONLY remote data (don't merge in stale local data)
-          // This ensures deletions and updates in remote are respected
           return [...remote];
         } else {
-          // If local is newer or equal, trust local entirely (remote may contain stale data)
           return [...local];
         }
       };
@@ -91,7 +83,6 @@ export function useWaterfallState() {
       const mergedSales = mergeLists(localSales, remote?.salesOrdersList, remote?.updatedAt);
       const mergedForecasts = mergeLists(localForecasts, remote?.forecastSummaryList, remote?.updatedAt);
 
-      // Merge BOM costs (prefer newer timestamp)
       let mergedBomCosts: Record<string, number> = { ...DEFAULT_BOM_COSTS };
       if (localBomCosts) {
         mergedBomCosts = { ...mergedBomCosts, ...localBomCosts };
@@ -102,28 +93,22 @@ export function useWaterfallState() {
         if (preferRemote) {
           mergedBomCosts = { ...DEFAULT_BOM_COSTS, ...remote.bomCosts };
         }
-        // If local is newer, keep mergedBomCosts as-is (remote may be stale)
       }
 
-      // Merge cell comments (prefer newer timestamp, but merge both)
       let mergedCellComments: CellComments = { ...localCellComments };
       if (remote?.cellComments) {
         const localUpdatedAt = getLocalStorageTimestamp();
         const preferRemote = remote.updatedAt && (!localUpdatedAt || remote.updatedAt > localUpdatedAt);
         if (preferRemote) {
-          // Prefer remote, but keep local comments that don't exist in remote
           mergedCellComments = { ...localCellComments, ...remote.cellComments };
         } else {
-          // Prefer local, but add remote comments that don't exist locally
           mergedCellComments = { ...remote.cellComments, ...localCellComments };
         }
       }
 
-      // Sort by upload date
       const sortedSales = sortPeriodsByUploadDate(mergedSales);
       const sortedForecasts = sortPeriodsByUploadDate(mergedForecasts);
 
-      // Assign IDs to uploads that don't have them (migration for existing data)
       const { salesOrdersList: salesWithIds, forecastSummaryList: forecastsWithIds } = assignMissingIds(
         sortedSales,
         sortedForecasts
@@ -136,7 +121,6 @@ export function useWaterfallState() {
       setBomCosts(mergedBomCosts);
       setCellComments(mergedCellComments);
 
-      // If we merged data, assigned IDs, or it's different from what we loaded, save it back
       const idsChanged = salesWithIds.some((so, i) => so.id !== sortedSales[i]?.id) ||
         forecastsWithIds.some((fc, i) => fc.id !== sortedForecasts[i]?.id);
       
@@ -158,7 +142,6 @@ export function useWaterfallState() {
     };
   }, []);
 
-  // Persist data whenever it changes
   useEffect(() => {
     try {
       localStorage.setItem("mvst_salesOrdersList", JSON.stringify(salesOrdersList));

@@ -25,7 +25,6 @@ import {
 export default function Home() {
   const [mode, setMode] = useState<"normal" | "edit" | "delete">("normal");
   
-  // Cycle through modes: normal -> edit -> delete -> normal
   const handleToggleMode = useCallback(() => {
     setMode(prev => {
       if (prev === "normal") return "edit";
@@ -37,10 +36,8 @@ export default function Home() {
   const editMode = mode === "edit";
   const deleteMode = mode === "delete";
 
-  // Load settings on app start (side effect: caches settings for use across the app)
   useSettings();
 
-  // Use custom hooks for state management
   const {
     salesOrdersList,
     setSalesOrdersList,
@@ -53,7 +50,6 @@ export default function Home() {
     persistSharedState,
   } = useWaterfallState();
 
-  // Use custom hooks
   const {
     fromMonth,
     toMonth,
@@ -101,7 +97,6 @@ export default function Home() {
 
   const handleDeleteByDate = useCallback(
     async (idOrDateLabel: number | string) => {
-      // Support both ID (new) and dateLabel (backward compatibility)
       const nextSales = typeof idOrDateLabel === "number"
         ? salesOrdersList.filter((so) => so.id !== idOrDateLabel)
         : salesOrdersList.filter((so) => so.uploadDateLabel !== idOrDateLabel);
@@ -110,12 +105,10 @@ export default function Home() {
         ? forecastSummaryList.filter((fc) => fc.id !== idOrDateLabel)
         : forecastSummaryList.filter((fc) => fc.uploadDateLabel !== idOrDateLabel);
       
-      // Update state immediately
       setSalesOrdersList(nextSales);
       setForecastSummaryList(nextForecasts);
       const updatedAt = new Date().toISOString();
       
-      // Update localStorage immediately to prevent stale data on reload
       try {
         localStorage.setItem("mvst_salesOrdersList", JSON.stringify(nextSales));
         localStorage.setItem("mvst_forecastSummary", JSON.stringify(nextForecasts));
@@ -135,12 +128,10 @@ export default function Home() {
     [bomCosts, forecastSummaryList, salesOrdersList, setForecastSummaryList, setSalesOrdersList],
   );
 
-  // Batch delete multiple uploads at once
   const handleBatchDelete = useCallback(
     async (idsOrDateLabels: (number | string)[]) => {
       if (idsOrDateLabels.length === 0) return;
       
-      // Filter out all selected uploads in a single operation
       const idsSet = new Set(idsOrDateLabels);
       const nextSales = salesOrdersList.filter((so) => {
         const key = so.id ?? so.uploadDateLabel;
@@ -152,12 +143,10 @@ export default function Home() {
         return !idsSet.has(key);
       });
       
-      // Update state immediately
       setSalesOrdersList(nextSales);
       setForecastSummaryList(nextForecasts);
       const updatedAt = new Date().toISOString();
       
-      // Update localStorage immediately
       try {
         localStorage.setItem("mvst_salesOrdersList", JSON.stringify(nextSales));
         localStorage.setItem("mvst_forecastSummary", JSON.stringify(nextForecasts));
@@ -184,7 +173,6 @@ export default function Home() {
     localStorage.removeItem("mvst_bom_costs");
     localStorage.removeItem("mvst_state_updatedAt");
     
-    // Load data from remote storage
     try {
       const remote = await loadSharedWaterfallState();
       
@@ -197,7 +185,6 @@ export default function Home() {
         setForecastSummaryList(sortedForecasts);
         setBomCosts(remoteBomCosts);
         
-        // Save to localStorage for future use
         try {
           localStorage.setItem("mvst_salesOrdersList", JSON.stringify(sortedSales));
           localStorage.setItem("mvst_forecastSummary", JSON.stringify(sortedForecasts));
@@ -210,14 +197,12 @@ export default function Home() {
         }
         
       } else {
-        // No remote data, reset to empty/default values
         setSalesOrdersList([]);
         setForecastSummaryList([]);
         setBomCosts(DEFAULT_BOM_COSTS);
       }
     } catch (error) {
       console.error("Failed to reload data from remote storage:", error);
-      // Reset to empty/default values on error
       setSalesOrdersList([]);
       setForecastSummaryList([]);
       setBomCosts(DEFAULT_BOM_COSTS);
@@ -409,10 +394,8 @@ export default function Home() {
             onCellCommentChange={async (key, value) => {
               const updatedComments = { ...cellComments };
               if (value && value.trim()) {
-                // Set the comment if it has content
                 updatedComments[key] = value;
               } else {
-                // Delete the comment if it's empty
                 delete updatedComments[key];
               }
               setCellComments(updatedComments);

@@ -50,7 +50,6 @@ type DemandWaterfallTableProps = {
   onCellCommentChange?: (key: string, value: string) => Promise<void>;
   editMode?: boolean;
   deleteMode?: boolean;
-  // onDateEdit now receives a stable key (upload ID if available, otherwise dateLabel) plus the current date label.
   onDateEdit?: (key: number | string, dateLabel: string, anchor?: DateAnchor) => void;
   onDateDelete?: (id: number | string) => void; // Accept ID (number) or dateLabel (string) for backward compatibility
   onBatchDelete?: (ids: (number | string)[]) => void; // Batch delete multiple uploads at once
@@ -70,16 +69,13 @@ export default function DemandWaterfallTable({
 }: DemandWaterfallTableProps) {
   const resolvedBomCosts = propBomCosts ?? getBomCosts();
   
-  // Dynamically discover all platforms from data and settings
   const allPlatforms = useMemo(
     () => getAllPlatforms(salesOrdersList, forecastSummaryList, resolvedBomCosts),
     [salesOrdersList, forecastSummaryList, resolvedBomCosts]
   );
   
-  // Track which platforms user has explicitly deselected
   const [deselectedPlatforms, setDeselectedPlatforms] = useState<Set<string>>(new Set());
   
-  // Compute selected platforms as derived state (all platforms minus deselected ones)
   const selectedPlatforms = useMemo(() => {
     return allPlatforms.filter(platform => !deselectedPlatforms.has(platform));
   }, [allPlatforms, deselectedPlatforms]);
@@ -90,10 +86,8 @@ export default function DemandWaterfallTable({
   const [, setPlatformMonthMachineIdMap] = useState<PlatformMonthMachineIdMap | undefined>(undefined);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   
-  // Track selected uploads for mass delete
   const [selectedUploads, setSelectedUploads] = useState<Set<number | string>>(new Set());
   
-  // Function to toggle platform selection
   const togglePlatform = useCallback((platform: string) => {
     setDeselectedPlatforms(prev => {
       const next = new Set(prev);
@@ -106,13 +100,11 @@ export default function DemandWaterfallTable({
     });
   }, []);
 
-  // Merge all months from uploads and forecasts
   const months = useMemo<MonthColumn[]>(
     () => computeMonths(salesOrdersList, forecastSummaryList),
     [salesOrdersList, forecastSummaryList],
   );
 
-  // Get unique uploads with their IDs and labels for mass delete selection
   const uniqueUploads = useMemo(() => {
     const uploadMap = new Map<number | string, { id: number | string; label: string; date: Date | null }>();
     
@@ -139,18 +131,15 @@ export default function DemandWaterfallTable({
     });
     
     return Array.from(uploadMap.values()).sort((a, b) => {
-      // Sort by date chronologically (newest first)
       if (a.date && b.date) {
         return b.date.getTime() - a.date.getTime();
       }
       if (a.date) return -1;
       if (b.date) return 1;
-      // Fallback to label comparison if dates can't be parsed
       return b.label.localeCompare(a.label);
     });
   }, [salesOrdersList, forecastSummaryList]);
 
-  // Toggle upload selection
   const toggleUploadSelection = useCallback((uploadId: number | string) => {
     setSelectedUploads(prev => {
       const next = new Set(prev);
@@ -163,17 +152,14 @@ export default function DemandWaterfallTable({
     });
   }, []);
 
-  // Select all uploads
   const selectAllUploads = useCallback(() => {
     setSelectedUploads(new Set(uniqueUploads.map(u => u.id)));
   }, [uniqueUploads]);
 
-  // Deselect all uploads
   const deselectAllUploads = useCallback(() => {
     setSelectedUploads(new Set());
   }, []);
 
-  // Handle mass delete - batch delete all selected uploads at once
   const handleMassDelete = useCallback(async () => {
     if (selectedUploads.size === 0) return;
     
@@ -182,22 +168,16 @@ export default function DemandWaterfallTable({
     
     if (!window.confirm(confirmMessage)) return;
     
-    // Get all IDs to delete
     const idsToDelete = Array.from(selectedUploads);
     
-    // Clear selection first
     setSelectedUploads(new Set());
     
-    // Use batch delete if available, otherwise fall back to individual deletes
     if (onBatchDelete) {
-      // Batch delete all at once - much more efficient
       await onBatchDelete(idsToDelete);
     } else if (onDateDelete) {
-      // Fallback: delete one by one (slower but works)
       for (const id of idsToDelete) {
         try {
           await onDateDelete(id);
-          // Small delay to allow state to update
           await new Promise(resolve => setTimeout(resolve, 100));
         } catch (error) {
           console.error(`Failed to delete upload ${id}:`, error);
@@ -206,22 +186,18 @@ export default function DemandWaterfallTable({
     }
   }, [selectedUploads, onBatchDelete, onDateDelete]);
 
-  // Clear selection when exiting delete mode
   const prevDeleteModeRef = useRef(deleteMode);
   useEffect(() => {
     const wasInDeleteMode = prevDeleteModeRef.current;
     prevDeleteModeRef.current = deleteMode;
     
-    // Clear selection when transitioning from delete mode to non-delete mode
     if (wasInDeleteMode && !deleteMode) {
-      // Use requestAnimationFrame to defer state update outside of effect
       requestAnimationFrame(() => {
         setSelectedUploads(new Set());
       });
     }
   }, [deleteMode]);
 
-  // Force table re-render when selections change in delete mode
   useEffect(() => {
     if (deleteMode) {
       const hot = getHotInstance();
@@ -233,7 +209,6 @@ export default function DemandWaterfallTable({
     }
   }, [selectedUploads, deleteMode]);
 
-  // Fetch machine ID data on mount
   useEffect(() => {
     let cancelled = false;
     
@@ -246,7 +221,7 @@ export default function DemandWaterfallTable({
           setPlatformMonthMachineIdMap(platformMonthMap);
         }
       } catch {
-        // Failed to load machine IDs
+        // ignore
       }
     };
 
@@ -286,18 +261,11 @@ export default function DemandWaterfallTable({
 
   const colWidths = useMemo(() => createColumnWidths(months), [months]);
 
-  // Calculate summary start column for collapsible columns
   const summaryStart = useMemo(() => MONTH_START_COL + months.length * 3, [months.length]);
   
-  // Configure collapsible columns for Summary section
-  // Target the Summary header in the top row (row -2 from data rows)
-  // Configure to collapse columns starting from the 2nd summary column, keeping "Current total SO" visible
   const collapsibleColumns = useMemo(() => {
     if (SUMMARY_COLUMNS.length <= 1) return [];
     
-    // Target the Summary header in the top row
-    // The button will appear on the header cell itself
-    // Note: We target the first column, but the collapse logic will keep it visible
     return [
       {
         row: -2, // Top header row (2 rows up from first data row, which is row 0 in nestedHeaders)
@@ -307,14 +275,11 @@ export default function DemandWaterfallTable({
     ];
   }, [summaryStart]);
 
-
-  // Calculate platforms per period (only platforms that exist in each period's data)
   const platformsPerPeriod = useMemo(
     () => getPlatformsPerPeriod(effectivePeriods, forecastSummaryList, visiblePlatforms),
     [effectivePeriods, forecastSummaryList, visiblePlatforms],
   );
 
-  // Calculate rows per period based on actual platforms in each period
   const rowsPerPeriod = useMemo(
     () => platformsPerPeriod.map(count => getRowsPerPeriod(showTotals, count)),
     [platformsPerPeriod, showTotals],
@@ -327,7 +292,6 @@ export default function DemandWaterfallTable({
     [periodCount, rowsPerPeriod],
   );
 
-  // Helper to get row metadata (period, platform index, isTotals, valid months)
   const getRowMetadata = useMemo(
     () =>
       createRowMetadataGetter({
@@ -351,7 +315,6 @@ export default function DemandWaterfallTable({
     [months, salesOrdersList, forecastSummaryList, showTotals, visiblePlatforms, cellComments],
   );
 
-  // Create reverse mapping from row/col to cell comment key for saving edited comments
   const rowColToCommentKey = useMemo(() => {
     const map = new Map<string, string>();
     const platformsPerPeriod = getPlatformsPerPeriod(salesOrdersList, forecastSummaryList, visiblePlatforms);
@@ -388,11 +351,9 @@ export default function DemandWaterfallTable({
 
         const colIndex = MONTH_START_COL + monthIndex * 3;
           
-          // SO column
           const soKey = generateCellCommentKey(salesOrders.uploadDateLabel, platform, month.key, "so");
           map.set(`${rowIndex},${colIndex}`, soKey);
           
-          // Forecast column
           const forecastColIndex = colIndex + 1;
           const forecastKey = generateCellCommentKey(salesOrders.uploadDateLabel, platform, month.key, "forecast");
           map.set(`${rowIndex},${forecastColIndex}`, forecastKey);
@@ -403,7 +364,6 @@ export default function DemandWaterfallTable({
     return map;
   }, [salesOrdersList, forecastSummaryList, visiblePlatforms, months, showTotals]);
 
-  // Map row index -> platform for quick lookup when rendering (platform rows only)
   const rowPlatformMap = useMemo(() => {
     const map = new Map<number, string>();
     const rowsPerPeriodArray = rowsPerPeriod;
@@ -439,7 +399,6 @@ export default function DemandWaterfallTable({
     return map;
   }, [effectivePeriods, forecastSummaryList, visiblePlatforms, rowsPerPeriod]);
 
-  // Convert comments array to a Map for quick lookup
   const cellCommentsMap = useMemo(() => {
     const map = new Map<string, { value: string }>();
     cellCommentsArray.forEach((comment) => {
@@ -449,7 +408,6 @@ export default function DemandWaterfallTable({
     return map;
   }, [cellCommentsArray]);
 
-  // Set comments using Handsontable API after table is ready
   useEffect(() => {
     const hot = getHotInstance();
     if (!hot || cellCommentsMap.size === 0) {
@@ -461,17 +419,15 @@ export default function DemandWaterfallTable({
       try {
         hot.setCellMeta(row, col, 'comment', comment);
       } catch {
-        // Error setting comment
+        // ignore
       }
     });
     
-    // Force render to show comment indicators
     setTimeout(() => {
       hot.render();
     }, 100);
   }, [cellCommentsMap, data]);
 
-  // Numeric renderer with thousand separators
   const numberRenderer = useMemo(() => {
     return function (
       instance: any,
@@ -488,7 +444,6 @@ export default function DemandWaterfallTable({
     };
   }, []);
 
-  // Function to reapply borders to all cells
   const reapplyBorders = useMemo(() => {
     return () => {
       const hot = getHotInstance();
@@ -496,19 +451,16 @@ export default function DemandWaterfallTable({
         const container = hot.rootElement;
         if (!container) return;
         
-        // Reapply border classes to header cells
         const allHeaderCells = container.querySelectorAll('thead th, .ht_clone_top thead th, .ht_clone_left_top thead th');
         allHeaderCells.forEach((cell: any) => {
           if (!cell.classList.contains('summary-header') && !cell.classList.contains('summary-subheader')) {
             cell.classList.add("dark-border-header");
-            // Force border style to ensure it persists
             cell.style.border = "0.1px solid #000000";
           } else {
             cell.classList.remove("dark-border-header");
           }
         });
         
-        // Reapply border classes to data cells
         const totalRows = hot.countRows();
         const summaryStart = MONTH_START_COL + months.length * 3;
         
@@ -520,7 +472,6 @@ export default function DemandWaterfallTable({
             try {
               const cell = hot.getCell(row, col);
               if (cell) {
-                // Determine if this column should have dark borders
                 const isMonthColumn = col >= MONTH_START_COL && col < summaryStart;
                 let isInValidMonth = false;
                 if (isMonthColumn) {
@@ -531,23 +482,20 @@ export default function DemandWaterfallTable({
                   }
                 }
                 
-                // Apply dark border for: date columns (0-1), platform column (2), and valid month columns
                 const shouldHaveDarkBorder = col === 0 || col === 1 || col === 2 || (isMonthColumn && isInValidMonth);
                 
                 if (shouldHaveDarkBorder) {
                   cell.classList.add("dark-border-cell");
-                  // Force border style to ensure it persists even in edit mode
                   cell.style.border = "0.1px solid #000000";
                 } else {
                   cell.classList.remove("dark-border-cell");
                   if (isMonthColumn) {
-                    // Clear border for invalid months
                     cell.style.border = "";
                   }
                 }
               }
             } catch {
-              // Ignore errors for cells that don't exist
+              // ignore
             }
           }
         }
@@ -558,18 +506,14 @@ export default function DemandWaterfallTable({
   useEffect(() => {
     const hot = getHotInstance();
     if (hot) {
-      
-      // Set header font size and weight directly via DOM
       const container = hot.rootElement;
       if (container) {
-        // Target all header cells in the main table and clones
         const headerCells = container.querySelectorAll('thead th, .ht_clone_top thead th, .ht_clone_left_top thead th');
         const headerFontSize = `${TABLE_FONT_SIZE_PX}px`;
         headerCells.forEach((cell: any) => {
           if (cell) {
             cell.style.fontSize = headerFontSize;
             cell.style.fontWeight = 'bold';
-            // Also target any nested elements
             const nested = cell.querySelectorAll('*');
             nested.forEach((el: any) => {
               el.style.fontSize = headerFontSize;
@@ -578,60 +522,49 @@ export default function DemandWaterfallTable({
         });
       }
       
-      // Handle collapsible columns to keep "Current total SO" visible when collapsed
       const handleAfterCollapse = () => {
         try {
           const collapsiblePlugin = hot.getPlugin('collapsibleColumns');
           if (collapsiblePlugin) {
             const summaryStartCol = summaryStart;
-            const firstSummaryCol = summaryStartCol; // Current total SO (index 0)
+            const firstSummaryCol = summaryStartCol;
             
-            // Get hidden columns using the plugin API
             const hiddenCols = (collapsiblePlugin as any).getHiddenColumns?.() || [];
             
-            // If first summary column is hidden, show it to keep it visible
             if (hiddenCols.includes(firstSummaryCol)) {
               (collapsiblePlugin as any).showColumns?.([firstSummaryCol]);
             }
           }
         } catch {
-          // Plugin might not be available or API might differ
+          // ignore
         }
         setTimeout(() => reapplyBorders(), 0);
       };
       
-      // Also handle after expand to ensure first column stays visible
       const handleAfterExpand = () => {
         setTimeout(() => reapplyBorders(), 0);
       };
       
-      // Apply borders initially
       reapplyBorders();
       
-      // Collapse summary columns by default (keep "Current total SO" visible)
-      // Use a timeout to ensure the table and plugins are fully initialized
       const initializeCollapsedState = () => {
         try {
           if (SUMMARY_COLUMNS.length > 1) {
             const summaryStartCol = summaryStart;
-            // Hide all summary columns except the first one (Current total SO)
             const columnsToHide: number[] = [];
             for (let i = 1; i < SUMMARY_COLUMNS.length; i++) {
               columnsToHide.push(summaryStartCol + i);
             }
             if (columnsToHide.length > 0) {
-              // Try using HiddenColumns plugin first (more reliable for initial state)
               const hiddenColumnsPlugin = hot.getPlugin('hiddenColumns');
               if (hiddenColumnsPlugin) {
                 (hiddenColumnsPlugin as any).hideColumns?.(columnsToHide);
               } else {
-                // Fallback to collapsibleColumns plugin
                 const collapsiblePlugin = hot.getPlugin('collapsibleColumns');
                 if (collapsiblePlugin) {
                   (collapsiblePlugin as any).hideColumns?.(columnsToHide);
                 }
               }
-              // Re-render to show the changes
               setTimeout(() => {
                 hot.render();
                 reapplyBorders();
@@ -639,41 +572,34 @@ export default function DemandWaterfallTable({
             }
           }
         } catch {
-          // Plugin might not be available yet
+          // ignore
         }
       };
       
-      // Initialize collapsed state after table is ready
       setTimeout(initializeCollapsedState, 200);
       
-      // Reapply borders after cell changes
       const handleAfterChange = () => {
         setTimeout(() => reapplyBorders(), 0);
       };
       
-      // Reapply borders after selection changes (when exiting edit mode)
       const handleAfterSelectionEnd = () => {
         setTimeout(() => reapplyBorders(), 0);
       };
-      
-      // Reapply borders when edit mode changes
+
       const handleAfterBeginEditing = () => {
         setTimeout(() => reapplyBorders(), 0);
       };
 
-      // Handle comment editing - extract custom comment and save it
       const handleAfterSetCellMeta = (row: number, col: number, key: string, value: any) => {
         if (key === 'comment' && onCellCommentChange) {
           const commentKey = rowColToCommentKey.get(`${row},${col}`);
           if (commentKey) {
             const commentValue = value?.value || "";
             
-            // Parse comment key to get original job numbers
             const [uploadDateLabel, platform, monthKey, columnType] = commentKey.split(":");
             let originalJobNumbers: string[] = [];
             
             if (columnType === "so") {
-              // Get job numbers from sales orders
               const salesOrder = salesOrdersList.find(so => so.uploadDateLabel === uploadDateLabel);
               if (salesOrder) {
                 const bucket = salesOrder.totals[platform]?.[monthKey];
@@ -682,38 +608,31 @@ export default function DemandWaterfallTable({
                 }
               }
             } else if (columnType === "forecast") {
-              // Get machine IDs from forecast
               const forecast = forecastSummaryList.find(fc => fc.uploadDateLabel === uploadDateLabel);
               if (forecast) {
                 originalJobNumbers = forecast.machineIds?.[platform]?.[monthKey] || [];
               }
             }
             
-            // Extract custom comment by removing original job numbers
             let customComment = "";
             if (commentValue.trim()) {
               const originalJobNumbersText = originalJobNumbers.join("\n");
               const lines = commentValue.split("\n").map((l: string) => l.trim()).filter((l: string) => l);
               
-              // Check if comment contains "[Note: " marker
               const noteMatch = commentValue.match(/\[Note:\s*(.+?)\]\s*$/);
               if (noteMatch) {
-                // Extract custom comment from note marker
                 customComment = noteMatch[1].trim();
               } else if (originalJobNumbersText) {
-                // Remove original job numbers and get remaining text
                 const originalLines = originalJobNumbersText.split("\n").map(l => l.trim()).filter(l => l);
                 const customLines = lines.filter((line: string) => !originalLines.includes(line));
                 if (customLines.length > 0) {
                   customComment = customLines.join("\n").trim();
                 }
               } else {
-                // No original job numbers, entire comment is custom
                 customComment = commentValue.trim();
               }
             }
             
-            // Save custom comment (empty string removes it)
             onCellCommentChange(commentKey, customComment);
           }
         }
@@ -723,7 +642,6 @@ export default function DemandWaterfallTable({
       hot.addHook('afterSelectionEnd', handleAfterSelectionEnd);
       hot.addHook('afterBeginEditing', handleAfterBeginEditing);
       hot.addHook('afterSetCellMeta', handleAfterSetCellMeta);
-      // Listen for column visibility changes
       hot.addHook('afterHideColumns', handleAfterCollapse);
       hot.addHook('afterUnhideColumns', handleAfterExpand);
       
@@ -754,7 +672,7 @@ export default function DemandWaterfallTable({
         colWidths,
       });
     } catch {
-      // Ignore export errors
+      // ignore
     } finally {
       setIsExporting(false);
     }
@@ -1000,24 +918,20 @@ export default function DemandWaterfallTable({
             const props: any = {};
             const classNames: string[] = [];
             
-            // Check if this cell has a comment
             const commentKey = `${row},${col}`;
             const comment = cellCommentsMap.get(commentKey);
             if (comment) {
               props.comment = comment;
             }
             
-            // Get row metadata
             const metadata = getRowMetadata(row);
             const { periodIndex, platformIndex, isTotals, validMonthKeys } = metadata;
             const platformForRow = rowPlatformMap.get(row);
             
-            // Determine if this column is a month data column (SO, Forecast, or SS)
             const summaryStart = MONTH_START_COL + months.length * 3;
             const isMonthColumn = col >= MONTH_START_COL && col < summaryStart;
             const isSummaryColumn = col >= summaryStart && col < summaryStart + SUMMARY_COLUMNS.length;
             
-            // Calculate which month this column belongs to (if it's a month column)
             let monthIndex = -1;
             let isInValidMonth = false;
             if (isMonthColumn) {
@@ -1028,7 +942,6 @@ export default function DemandWaterfallTable({
               }
             }
 
-            // Detect quantity vs job list mismatch on SO cells
             const isSoColumn = isMonthColumn && ((col - MONTH_START_COL) % 3 === 0);
             let hasQtyMismatch = false;
             let mismatchTitle: string | undefined;
@@ -1053,7 +966,6 @@ export default function DemandWaterfallTable({
               }
             }
             
-            // Detect quantity vs job list mismatch on Forecast cells
             const isForecastColumn = isMonthColumn && ((col - MONTH_START_COL) % 3 === 1);
             if (
               isForecastColumn &&
@@ -1078,25 +990,19 @@ export default function DemandWaterfallTable({
               }
             }
             
-            // Determine background color
             let bgColor = "";
             if (periodIndex >= 0) {
               if (isTotals) {
-                // Totals rows: Yellow for valid months and summary columns
                 if ((isMonthColumn && isInValidMonth) || isSummaryColumn) {
                   bgColor = "#FFFFE5";
                 }
               } else if (platformIndex >= 0) {
-                // Platform rows: Apply alternating colors by period (pink, green, pink, green...)
-                // Only apply to valid month columns (not summary columns for platform rows)
                 if (isMonthColumn && isInValidMonth) {
-                  // Alternate by period: even periods = pink, odd periods = green
                   bgColor = periodIndex % 2 === 0 ? "#FFE5E5" : "#E5FFE5";
                 }
               }
             }
             
-            // Check for delete mode selection highlighting (before renderer is defined)
             if (deleteMode && col === 0) {
               const label = data[row]?.[0];
               if (label && typeof label === "string") {
@@ -1105,21 +1011,17 @@ export default function DemandWaterfallTable({
                 const upload = soUpload ?? fcUpload;
                 const uploadId = upload?.id ?? label;
                 if (selectedUploads.has(uploadId)) {
-                  bgColor = "#DBEAFE"; // Light blue background for selected uploads
+                  bgColor = "#DBEAFE";
                 }
               }
             }
             
-            // Determine if this column should have dark borders
-            // Dark borders for: date columns (0-1), platform column (2), and valid month columns
             const shouldHaveDarkBorder = col === 0 || col === 1 || col === 2 || (isMonthColumn && isInValidMonth);
             
-            // Add dark-border-cell class for cells that should have dark borders
             if (shouldHaveDarkBorder) {
               classNames.push("dark-border-cell");
             }
             
-            // Set up renderer with background color
             if (col >= MONTH_START_COL) {
               props.renderer = function(
                 instance: any,
@@ -1130,15 +1032,12 @@ export default function DemandWaterfallTable({
                 value: any,
                 cellProperties: any
               ) {
-                // Apply background color if specified
                 if (bgColor) {
                   td.style.backgroundColor = bgColor;
                 } else if (isMonthColumn) {
-                  // Clear background for invalid months
                   td.style.backgroundColor = "";
                 }
                 
-                // Use the number renderer for formatting
                 numberRenderer(instance, td, r, c, prop, value, cellProperties);
               };
             } else {
@@ -1152,21 +1051,17 @@ export default function DemandWaterfallTable({
                 value: any,
                 cellProperties: any
               ) {
-                // Apply background color if specified (for delete mode selection highlighting)
                 if (bgColor) {
                   td.style.backgroundColor = bgColor;
                 }
-                // Use default text renderer
                 textRenderer(instance, td, r, c, prop, value, cellProperties);
               };
             }
             
-            // Apply summary cell styling
             if (isSummaryColumn) {
               classNames.push("summary-cell");
             }
 
-            // Apply mismatch indicator styling
             if (hasQtyMismatch) {
               classNames.push("qty-mismatch");
               if (!props.title) {
@@ -1174,7 +1069,6 @@ export default function DemandWaterfallTable({
               }
             }
             
-            // Apply totals row styling
             if (isTotals && col > 1) {
               classNames.push("totals-cell");
               if (col === 2) {
@@ -1182,7 +1076,6 @@ export default function DemandWaterfallTable({
               }
             }
             
-            // Mark date column clickable in edit mode or delete mode
             if ((editMode || deleteMode) && col === 0) {
               classNames.push("date-deletable");
             }
@@ -1205,18 +1098,15 @@ export default function DemandWaterfallTable({
               const { periodIndex } = metadata;
               
               if (label && typeof label === "string" && periodIndex >= 0) {
-                // Find the corresponding upload by label in either Sales Orders or Forecasts
                 const soUpload = salesOrdersList.find((so) => so.uploadDateLabel === label);
                 const fcUpload = forecastSummaryList.find((fc) => fc.uploadDateLabel === label);
                 const upload = soUpload ?? fcUpload;
                 const uploadId = upload?.id ?? label;
                 
                 if (deleteMode && event?.button === 0) {
-                  // Left-click in delete mode: toggle selection
                   event.preventDefault?.();
                   toggleUploadSelection(uploadId);
                 } else if (editMode && event?.button === 0) {
-                  // Left-click in edit mode: edit date
                   let anchor: DateAnchor | undefined;
                   const target = (event?.target as HTMLElement | null)?.closest("td") as HTMLElement | null;
                   const rect = target?.getBoundingClientRect();

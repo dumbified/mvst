@@ -10,17 +10,11 @@ interface CombinedChartProps {
 }
 
 export default function CombinedChart({ data, visibleSeries }: CombinedChartProps) {
-  // Note: Accuracy is now calculated per forecast month bucket, not per upload month
-  // So we don't show accuracy in the combined chart (which is by upload date)
-  // Users should use the Accuracy Chart to see accuracy trends by forecast month
-
-  // Combine shipped SO and shipped demo into a single data point
   const combinedData = data.map((point) => ({
     ...point,
     shippedTotal: (point.shipped || 0) + (point.shippedDemo || 0),
   }));
 
-  // Custom tooltip formatter to show breakdown of shipped total
   const customTooltipFormatter = (
     value: number | undefined,
     name: string | undefined,
